@@ -49,17 +49,17 @@ jobs:
           files: build-log.txt
 
       - name: Renombrar APK
-        run: cp app/build/outputs/apk/release/app-release.apk Logia.apk
+        run: cp app/build/outputs/apk/release/app-release.apk Solaris.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Logia
-          path: Logia.apk
+          name: Solaris
+          path: Solaris.apk
 
       - name: Publicar en Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.1.${{ github.run_number }}
-          name: Logia 0.1.${{ github.run_number }}
+          tag_name: v0.2.${{ github.run_number }}
+          name: Solaris 0.2.${{ github.run_number }}
           body: APK lista para instalar en el celular.
-          files: Logia.apk
+          files: Solaris.apk
