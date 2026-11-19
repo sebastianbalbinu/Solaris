@@ -41,17 +41,28 @@ data class Paleta(
     val coloresLetra: List<Color>,
 )
 
-val Dia = Paleta(
-    fondo = Color(0xFFF3E9D8),
-    superficie = Color(0xFFE9DDC8),
-    texto = Color(0xFF1B1A18),
-    texto2 = Color(0xFF6F6555),
-    linea = Color(0xFFE0D2BB),
+/** Un papel de día: el texto nunca es negro puro, para que la página no deslumbre. */
+private fun papelDeDia(fondo: Long, superficie: Long, linea: Long, tinta: Long, texto2: Long) = Paleta(
+    fondo = Color(fondo),
+    superficie = Color(superficie),
+    texto = Color(tinta),
+    texto2 = Color(texto2),
+    linea = Color(linea),
     acento = Color(0xFF2F5D5A),
-    boton = Color(0xFF1B1A18),
-    botonTexto = Color(0xFFF3E9D8),
-    coloresLetra = listOf(Color(0xFF1B1A18), Color(0xFF5B4636), Color(0xFF2F4A5C), Color(0xFF2F5D5A)),
+    boton = Color(tinta),
+    botonTexto = Color(fondo),
+    coloresLetra = listOf(Color(tinta), Color(0xFF5B4636), Color(0xFF2F4A5C), Color(0xFF2F5D5A)),
 )
+
+/** Claro: para leer bajo el sol. */
+val DiaClaro = papelDeDia(0xFFF3E9D8, 0xFFE9DDC8, 0xFFE0D2BB, 0xFF1F1C19, 0xFF6F6555)
+/** Tibio: papel de libro viejo, el de todos los días. */
+val DiaTibio = papelDeDia(0xFFE6DCCA, 0xFFDACDB7, 0xFFD2C4AC, 0xFF2A251F, 0xFF6A604F)
+/** Penumbra: crema oscuro para leer de noche sin pasar al negro. */
+val DiaPenumbra = papelDeDia(0xFFCBBFA9, 0xFFBFB29A, 0xFFB6A890, 0xFF26211B, 0xFF5A5143)
+
+val Papeles = listOf(DiaClaro, DiaTibio, DiaPenumbra)
+val NombresPapel = listOf("Claro", "Tibio", "Penumbra")
 
 /** Noche: negro absoluto, para que la pantalla OLED apague esos píxeles. */
 val Noche = Paleta(
@@ -85,7 +96,8 @@ object Tema {
         private set
     var colorNoche by mutableIntStateOf(0)
         private set
-    var sonidoMar by mutableStateOf(true)
+    /** Tono del papel de día: 0 claro, 1 tibio, 2 penumbra. */
+    var papel by mutableIntStateOf(1)
         private set
 
     fun iniciar(ctx: Context) {
@@ -94,13 +106,9 @@ object Tema {
         tamano = prefs.getInt("tamano", 1)
         colorDia = prefs.getInt("color_dia", 0)
         colorNoche = prefs.getInt("color_noche", 0)
-        sonidoMar = prefs.getBoolean("sonido_mar", true)
+        papel = prefs.getInt("papel", 1)
     }
 
-    fun alternarSonidoMar() {
-        sonidoMar = !sonidoMar
-        prefs.edit().putBoolean("sonido_mar", sonidoMar).apply()
-    }
 
     /** Se llama cada minuto para que el modo automático cambie solo al atardecer. */
     fun tic() { reloj++ }
@@ -120,7 +128,12 @@ object Tema {
             }
         }
 
-    val p: Paleta get() = if (esNoche) Noche else Dia
+    val p: Paleta get() = if (esNoche) Noche else Papeles[papel.coerceIn(0, Papeles.size - 1)]
+
+    fun fijarPapel(i: Int) {
+        papel = i.coerceIn(0, Papeles.size - 1)
+        prefs.edit().putInt("papel", papel).apply()
+    }
 
     fun alternar() = fijarModo(if (esNoche) "dia" else "noche")
 

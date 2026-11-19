@@ -1,6 +1,5 @@
 package com.sebas.solaris.ui
 
-import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -11,14 +10,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.withContext
-import kotlin.math.max
-import kotlin.math.roundToInt
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -38,11 +30,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -51,8 +41,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sebas.solaris.Sonidos
@@ -222,51 +210,6 @@ fun Puntos(llenos: Int, total: Int, color: Color) {
     }
 }
 
-/**
- * Pixel art vivo a pantalla completa. Calcula una escala entera para esta pantalla:
- * así todos los píxeles miden exactamente lo mismo.
- */
-@Composable
-fun <T : Pixelador> PixelVivo(
-    modifier: Modifier,
-    intervaloMs: Long,
-    crear: (Int, Int) -> T,
-    paso: (T, Double) -> Unit,
-) {
-    BoxWithConstraints(modifier.clipToBounds()) {
-        val wPx = constraints.maxWidth
-        val hPx = constraints.maxHeight
-        val escala = max(2, (wPx / 130f).roundToInt())
-        val ancho = (wPx + escala - 1) / escala
-        val alto = (hPx + escala - 1) / escala
-        val r = remember(ancho, alto) { crear(ancho, alto) }
-        val bmp = remember(ancho, alto) { Bitmap.createBitmap(ancho, alto, Bitmap.Config.ARGB_8888) }
-        val imagen = remember(bmp) { bmp.asImageBitmap() }
-        var cuadro by remember { mutableIntStateOf(0) }
-        LaunchedEffect(r) {
-            val inicio = System.currentTimeMillis()
-            while (isActive) {
-                val seg = (System.currentTimeMillis() - inicio) / 1000.0
-                withContext(Dispatchers.Default) { paso(r, seg) }
-                bmp.setPixels(r.px, 0, ancho, 0, 0, ancho, alto)
-                cuadro++
-                delay(intervaloMs)
-            }
-        }
-        Canvas(Modifier.fillMaxSize()) {
-            cuadro
-            drawImage(
-                imagen,
-                srcOffset = IntOffset.Zero,
-                srcSize = IntSize(ancho, alto),
-                dstOffset = IntOffset.Zero,
-                dstSize = IntSize(ancho * escala, alto * escala),
-                filterQuality = FilterQuality.None,
-            )
-        }
-    }
-}
-
 /** El botón se hunde un poco al tocarlo, con un rebote suave. */
 @Composable
 fun Modifier.presionable(habilitado: Boolean = true, alTocar: () -> Unit): Modifier {
@@ -280,23 +223,6 @@ fun Modifier.presionable(habilitado: Boolean = true, alTocar: () -> Unit): Modif
     return this
         .graphicsLayer { scaleX = escala; scaleY = escala }
         .clickable(interactionSource = fuente, indication = null, enabled = habilitado) { alTocar() }
-}
-
-/** Dibuja un bitmap pequeño ampliado sin suavizar: el pixel art se ve nítido. */
-@Composable
-fun LienzoPixel(bmp: Bitmap, cuadro: Int, modifier: Modifier = Modifier) {
-    val imagen = remember(bmp) { bmp.asImageBitmap() }
-    Canvas(modifier) {
-        cuadro
-        drawImage(
-            imagen,
-            srcOffset = IntOffset.Zero,
-            srcSize = IntSize(bmp.width, bmp.height),
-            dstOffset = IntOffset.Zero,
-            dstSize = IntSize(size.width.toInt(), size.height.toInt()),
-            filterQuality = FilterQuality.None,
-        )
-    }
 }
 
 // ---------- íconos dibujados a mano (trazo fino) ----------
@@ -397,25 +323,6 @@ fun IconoLupa(color: Color, tam: Dp = 20.dp) {
         val s = size.width; val g = s * 0.09f
         drawCircle(color, s * 0.27f, Offset(s * 0.43f, s * 0.43f), style = Stroke(g))
         drawLine(color, Offset(s * 0.63f, s * 0.63f), Offset(s * 0.86f, s * 0.86f), g, StrokeCap.Round)
-    }
-}
-
-@Composable
-fun IconoParlante(color: Color, encendido: Boolean, tam: Dp = 20.dp) {
-    Canvas(Modifier.size(tam)) {
-        val s = size.width; val g = s * 0.08f
-        val p = Path().apply {
-            moveTo(s * 0.12f, s * 0.38f); lineTo(s * 0.3f, s * 0.38f); lineTo(s * 0.52f, s * 0.18f)
-            lineTo(s * 0.52f, s * 0.82f); lineTo(s * 0.3f, s * 0.62f); lineTo(s * 0.12f, s * 0.62f); close()
-        }
-        drawPath(p, color, style = Stroke(g))
-        if (encendido) {
-            drawArc(color, -45f, 90f, false, Offset(s * 0.42f, s * 0.3f), Size(s * 0.36f, s * 0.4f), style = Stroke(g, cap = StrokeCap.Round))
-            drawArc(color, -50f, 100f, false, Offset(s * 0.4f, s * 0.16f), Size(s * 0.54f, s * 0.68f), style = Stroke(g, cap = StrokeCap.Round))
-        } else {
-            drawLine(color, Offset(s * 0.66f, s * 0.38f), Offset(s * 0.88f, s * 0.62f), g, StrokeCap.Round)
-            drawLine(color, Offset(s * 0.88f, s * 0.38f), Offset(s * 0.66f, s * 0.62f), g, StrokeCap.Round)
-        }
     }
 }
 

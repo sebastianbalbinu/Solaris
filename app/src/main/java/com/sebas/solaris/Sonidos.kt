@@ -2,7 +2,6 @@ package com.sebas.solaris
 
 import android.content.Context
 import android.media.AudioAttributes
-import android.media.MediaPlayer
 import android.media.SoundPool
 import android.os.Build
 import android.os.VibrationEffect
@@ -16,7 +15,6 @@ object Sonidos {
     private var suelta = 0
     private var tic = 0
     private var vibrador: Vibrator? = null
-    private var mar: MediaPlayer? = null
     private lateinit var app: Context
 
     fun iniciar(ctx: Context) {
@@ -72,17 +70,4 @@ object Sonidos {
         } catch (e: Exception) {}
     }
 
-    /** El rumor del mar: un bucle suave cuyo volumen sigue a la tormenta. */
-    fun mar(encendido: Boolean, intensidad: Float) {
-        if (!encendido) {
-            mar?.let { try { it.stop() } catch (e: Exception) {}; it.release() }
-            mar = null
-            return
-        }
-        val m = mar ?: try {
-            MediaPlayer.create(app, R.raw.mar)?.also { it.isLooping = true; it.start(); mar = it }
-        } catch (e: Exception) { null } ?: return
-        val vol = (0.18f + intensidad * 0.6f).coerceIn(0.05f, 0.85f)
-        m.setVolume(vol, vol)
-    }
 }

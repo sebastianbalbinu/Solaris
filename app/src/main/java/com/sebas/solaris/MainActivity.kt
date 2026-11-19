@@ -49,7 +49,6 @@ class MainActivity : FragmentActivity() {
         if (isChangingConfigurations) return
         // La grabación sigue sola (con su notificación); la reproducción se detiene.
         Grabadora.detenerReproduccion()
-        Sonidos.mar(false, 0f)
         // Apenas sales de la app, la estación se cierra.
         if (!Casa.pausarCandado) Casa.cerrar()
     }

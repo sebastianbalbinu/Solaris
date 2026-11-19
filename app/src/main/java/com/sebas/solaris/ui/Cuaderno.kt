@@ -342,13 +342,34 @@ fun HojaLetra(visible: Boolean, alCerrar: () -> Unit) {
             }
         }
 
+        if (!Tema.esNoche) {
+            Text("Papel", color = p.texto2, fontFamily = Sans, fontSize = 13.sp)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Papeles.forEachIndexed { i, papel ->
+                    val sel = i == Tema.papel
+                    Column(
+                        Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).clickable { com.sebas.solaris.Sonidos.tic(); Tema.fijarPapel(i) }.padding(6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Box(
+                            Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(12.dp)).background(papel.fondo)
+                                .border(if (sel) 2.dp else 1.dp, if (sel) p.acento else p.linea, RoundedCornerShape(12.dp)),
+                            contentAlignment = Alignment.Center,
+                        ) { Text("Aa", color = papel.texto, fontFamily = Sans, fontSize = 17.sp) }
+                        Spacer(Modifier.height(6.dp))
+                        Text(NombresPapel[i], color = if (sel) p.texto else p.texto2, fontFamily = Sans, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+
         Text("Modo", color = p.texto2, fontFamily = Sans, fontSize = 13.sp)
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(p.superficie).padding(4.dp)) {
             listOf("dia" to "Día", "noche" to "Noche", "auto" to "Según la hora").forEach { (clave, nombre) ->
                 val sel = Tema.modo == clave
                 Box(
                     Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(11.dp))
-                        .background(if (sel) (if (Tema.esNoche) Color(0xFF2C2C30) else Color(0xFFFBF5EB)) else Color.Transparent)
+                        .background(if (sel) (if (Tema.esNoche) Color(0xFF2C2C30) else p.fondo) else Color.Transparent)
                         .clickable { Tema.fijarModo(clave) },
                     contentAlignment = Alignment.Center,
                 ) { Text(nombre, color = if (sel) p.texto else p.texto2, fontFamily = Sans, fontSize = 14.sp) }

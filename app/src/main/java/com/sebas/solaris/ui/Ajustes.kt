@@ -65,13 +65,13 @@ fun Ajustes() {
                 FilaAccion("Sincronizar ahora") { Casa.sincronizar() }
             }
             Grupo("Lectura") {
-                FilaAccion("Letra y modo") { letra = true }
+                FilaAccion("Letra, papel y modo") { letra = true }
                 Fila("Modo", when (Tema.modo) { "dia" -> "Día"; "noche" -> "Noche"; else -> "Según la hora" })
+                Fila("Papel de día", NombresPapel[Tema.papel.coerceIn(0, 2)])
             }
             Grupo("Cintas") {
                 FilaAccion("Exportar todas a una carpeta") { Casa.pausarCandado = true; carpeta.launch(null) }
                 if (aviso != null) Parrafo(aviso ?: "", Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
-                FilaAccion(if (Tema.sonidoMar) "Silenciar el rumor del mar" else "Activar el rumor del mar") { Tema.alternarSonidoMar() }
             }
             Grupo("Entrada") {
                 if (hayHuella) {

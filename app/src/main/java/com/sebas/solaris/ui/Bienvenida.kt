@@ -214,7 +214,7 @@ fun PinNuevo(alTerminar: () -> Unit) {
                 listOf(4, 6).forEach { n ->
                     Box(
                         Modifier.width(110.dp).height(38.dp).clip(RoundedCornerShape(11.dp))
-                            .background(if (largo == n) (if (Tema.esNoche) Color(0xFF2C2C30) else Color(0xFFFBF5EB)) else Color.Transparent)
+                            .background(if (largo == n) (if (Tema.esNoche) Color(0xFF2C2C30) else Tema.p.fondo) else Color.Transparent)
                             .clickable { largo = n; pin = "" },
                         contentAlignment = Alignment.Center,
                     ) { Text("$n dígitos", color = if (largo == n) p.texto else p.texto2, fontFamily = Sans, fontSize = 14.sp) }

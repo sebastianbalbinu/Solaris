@@ -1,0 +1,130 @@
+// Solaris · la Tierra desde la estación, como el ícono: cianotipo, órbita y sol en crema.
+uniform float2 res;
+uniform float t;
+uniform float llegada;
+uniform float semilla;
+
+float cl(float x) { return clamp(x, 0.0, 1.0); }
+
+float hash(float2 p) {
+    float3 p3 = fract(float3(p.x, p.y, p.x) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+float ruido(float2 p) {
+    float2 i = floor(p);
+    float2 f = fract(p);
+    float2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+    float a = hash(mod(i, 512.0));
+    float b = hash(mod(i + float2(1.0, 0.0), 512.0));
+    float c = hash(mod(i + float2(0.0, 1.0), 512.0));
+    float d = hash(mod(i + float2(1.0, 1.0), 512.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+float fbm(float2 p) {
+    float s = 0.0;
+    float a = 0.5;
+    for (int i = 0; i < 6; i++) {
+        s += a * ruido(p);
+        p = float2(p.x * 1.6 - p.y * 1.2, p.x * 1.2 + p.y * 1.6) + float2(17.1, 9.2);
+        a *= 0.5;
+    }
+    return 0.5 + (s / 0.98 - 0.5) * 1.7;
+}
+
+half3 tono(float x) {
+    x = cl(x) * 7.0;
+    half3 c0 = half3(0.002, 0.034, 0.070);
+    half3 c1 = half3(0.047, 0.175, 0.219);
+    half3 c2 = half3(0.180, 0.313, 0.341);
+    half3 c3 = half3(0.343, 0.440, 0.440);
+    half3 c4 = half3(0.519, 0.562, 0.529);
+    half3 c5 = half3(0.700, 0.683, 0.612);
+    half3 c6 = half3(0.892, 0.801, 0.683);
+    half3 c7 = half3(0.930, 0.880, 0.780);
+    if (x < 1.0) return mix(c0, c1, half(x));
+    if (x < 2.0) return mix(c1, c2, half(x - 1.0));
+    if (x < 3.0) return mix(c2, c3, half(x - 2.0));
+    if (x < 4.0) return mix(c3, c4, half(x - 3.0));
+    if (x < 5.0) return mix(c4, c5, half(x - 4.0));
+    if (x < 6.0) return mix(c5, c6, half(x - 5.0));
+    return mix(c6, c7, half(min(x - 6.0, 1.0)));
+}
+
+half4 main(float2 fragCoord) {
+    float W = res.x;
+    float H = res.y;
+    float2 p = fragCoord;
+    float e = 1.0 - pow(1.0 - cl(llegada), 3.0);
+    // el planeta sube desde abajo mientras la estación se acerca
+    float R = W * (1.05 + 0.10 * e);
+    float2 c = float2(W * 0.42, H * (0.60 + (1.0 - e) * 0.22) + R);
+    float2 n2 = (p - c) / R;
+    float rr = dot(n2, n2);
+    float d0 = sqrt(rr) * R;
+    float lum = 0.0;
+    float px = W / 780.0;
+
+    if (rr < 1.0) {
+        float nz = sqrt(1.0 - rr);
+        float2 uv = n2 / (nz + 0.35);
+        uv.x += t * 0.004;
+        // un ciclón que gira despacio
+        float2 q = uv + float2(0.1, 0.55);
+        float a = atan(q.y, q.x);
+        float d = length(q);
+        float tw = a + 2.2 * exp(-d * 2.2) + t * 0.01;
+        float2 w = float2(cos(tw), sin(tw)) * d;
+        float n = fbm(w * 4.6 + float2(3.0, 1.0));
+        float det = fbm(uv * 26.0 + float2(t * 0.02, 0.0));
+        float nub = cl((n * 0.65 + det * 0.35 - 0.52) * 3.4);
+        float luzS = cl(0.2 + nz * 1.1);
+        lum = 0.12 + 0.07 * nz + nub * 0.52 * luzS;
+        lum *= 1.0 - cl((1.0 - nz) * 1.4) * 0.35;
+    } else {
+        // estrellas tenues que titilan
+        float2 celda = floor(p / (3.0 * px));
+        float h = hash(celda);
+        float brillo = step(0.9965, h) * hash(celda + 7.0) * (0.6 + 0.4 * sin(t * 1.5 + h * 60.0));
+        lum = brillo * 0.55;
+        lum += exp(-max(d0 - R, 0.0) / (56.0 * px)) * 0.12;
+    }
+    // halo de atmósfera en el borde
+    lum += exp(-pow((d0 - R) / (10.0 * px), 2.0)) * 0.5;
+
+    half3 col = tono(lum);
+
+    // órbita y sol, como en el ícono; la órbita pasa por detrás del planeta
+    float aparece = cl((llegada - 0.35) * 2.0);
+    if (rr >= 1.0 && aparece > 0.0) {
+        float2 oc = float2(W * 0.50, H * 0.665);
+        float ang = -0.1396;
+        float2 o = p - oc;
+        float2 ro = float2(o.x * cos(ang) + o.y * sin(ang), -o.x * sin(ang) + o.y * cos(ang));
+        float A = W * 0.40;
+        float B = H * 0.22;
+        float f = (ro.x * ro.x) / (A * A) + (ro.y * ro.y) / (B * B) - 1.0;
+        float2 g = float2(2.0 * ro.x / (A * A), 2.0 * ro.y / (B * B));
+        float dist = abs(f) / max(length(g), 0.0001);
+        float linea = (1.0 - smoothstep(0.8 * px, 2.2 * px, dist)) * step(ro.y, 0.0);
+        float th = 5.236;
+        float2 sl = float2(A * cos(th), B * sin(th));
+        float2 sol = oc + float2(sl.x * cos(ang) - sl.y * sin(ang), sl.x * sin(ang) + sl.y * cos(ang));
+        float ds = length(p - sol);
+        linea *= smoothstep(28.0 * px, 31.0 * px, ds);
+        float disco = 1.0 - smoothstep(19.0 * px, 21.0 * px, ds);
+        float crema = cl(linea + disco) * aparece;
+        col = mix(col, half3(0.933, 0.886, 0.792), half(crema));
+    }
+
+    // grano y viñeta
+    float gr = (hash(p + semilla * 37.0) + hash(p * 1.37 + semilla * 11.0) - 1.0) * 0.04;
+    float papel = (ruido(p / (140.0 * px)) * 0.6 + ruido(p / (47.0 * px)) * 0.4 - 0.5) * 0.04;
+    col += half3(gr + papel);
+    float vx = (p.x / W - 0.5) / 0.62;
+    float vy = (p.y / H - 0.5) / 0.68;
+    col *= half(1.0 - 0.45 * pow(cl(sqrt(vx * vx + vy * vy) - 0.35), 1.5));
+    return half4(max(col, half3(0.0)), 1.0);
+}

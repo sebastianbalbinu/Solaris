@@ -49,9 +49,6 @@ fun Oceano() {
     LaunchedEffect(Unit) {
         while (isActive) { Clima.actualizar(); delay(15 * 60 * 1000L) }
     }
-    val intensidad = ((mar.ola / 8.0 + mar.viento / 50.0) / 2.0).coerceIn(0.0, 1.0).toFloat()
-    LaunchedEffect(Tema.sonidoMar, intensidad) { Sonidos.mar(Tema.sonidoMar, intensidad) }
-    DisposableEffect(Unit) { onDispose { Sonidos.mar(false, 0f) } }
     val recuerdo = remember { Casa.recuerdoDeHoy() }
 
     val resultados: List<Item> = remember(mostrada, Casa.items) { if (mostrada.isBlank()) emptyList() else Casa.buscar(mostrada) }
@@ -64,12 +61,7 @@ fun Oceano() {
     }
 
     Box(Modifier.fillMaxSize().background(Color(0xFF05080C))) {
-        PixelVivo(
-            Modifier.fillMaxSize(),
-            intervaloMs = 85,
-            crear = { w, h -> OceanoPixel(w, h) },
-            paso = { o, _ -> o.cuadro(Clima.mar, 0.085) },
-        )
+        MarCianotipo(Modifier.fillMaxSize())
         Box(Modifier.fillMaxWidth().height(190.dp).background(Brush.verticalGradient(listOf(Color(0x99050810), Color.Transparent))))
 
         Column(Modifier.statusBarsPadding().padding(horizontal = 24.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -82,15 +74,6 @@ fun Oceano() {
             Senal("Ola ${uno(mar.ola)} m · ${mar.periodo.toInt()} s · viento ${mar.viento.toInt()} nudos", color = Tenue)
             Senal("Nubes ${mar.nubes.toInt()}% · visibilidad ${uno(mar.visibilidad)} km", color = Tenue)
             Senal(if (mar.real) "Lectura real · " + formato("HH:mm", mar.cuando) else "Esperando la primera lectura del mar…", color = Tenue)
-            Row(
-                Modifier.padding(top = 10.dp).clip(RoundedCornerShape(14.dp)).background(Color(0x26E4F1F3))
-                    .clickable { Sonidos.tic(); Tema.alternarSonidoMar() }.padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconoParlante(Claro, Tema.sonidoMar, 16.dp)
-                Spacer(Modifier.width(8.dp))
-                Senal(if (Tema.sonidoMar) "Rumor del mar" else "Mar en silencio", color = Claro)
-            }
         }
 
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().imePadding()) {

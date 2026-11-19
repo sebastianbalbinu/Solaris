@@ -126,12 +126,7 @@ fun Entrada(act: MainActivity) {
     val altitud = (520 - e * 108).toInt()
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        PixelVivo(
-            Modifier.fillMaxSize().graphicsLayer { alpha = aparicion },
-            intervaloMs = 70,
-            crear = { w, h -> PlanetaPixel(w, h) },
-            paso = { pl, seg -> pl.cuadro(0.07, (seg / 3.5).coerceIn(0.0, 1.0)) },
-        )
+        PlanetaCianotipo(Modifier.fillMaxSize().graphicsLayer { alpha = aparicion }) { llegada.toFloat() }
         Box(Modifier.fillMaxWidth().height(220.dp).background(Brush.verticalGradient(listOf(Color(0xAA000000), Color.Transparent))))
         Box(Modifier.fillMaxWidth().fillMaxHeight(0.55f).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC000000)))))
 
