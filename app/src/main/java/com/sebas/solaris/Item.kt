@@ -1,4 +1,4 @@
-package com.sebas.logia
+package com.sebas.solaris
 
 import org.json.JSONArray
 import org.json.JSONObject
@@ -21,9 +21,11 @@ data class Item(
     val created: Long,
     val updated: Long,
     val deleted: Boolean = false,
+    val dur: Long = 0,
 ) {
     val esEntrada: Boolean get() = kind == "entrada"
     val esCuarto: Boolean get() = kind == "cuarto"
+    val esCinta: Boolean get() = kind == "cinta"
 
     /** Páginas que suma al tomo: una por cada ~180 palabras (mínimo una) y una por cada foto. */
     val paginas: Int
@@ -44,6 +46,7 @@ data class Item(
         .put("created", created)
         .put("updated", updated)
         .put("deleted", deleted)
+        .put("dur", dur)
 
     companion object {
         fun nuevoId(): String = UUID.randomUUID().toString()
@@ -61,6 +64,7 @@ data class Item(
                 created = o.optLong("created"),
                 updated = o.optLong("updated"),
                 deleted = o.optBoolean("deleted"),
+                dur = o.optLong("dur"),
             )
         }
 

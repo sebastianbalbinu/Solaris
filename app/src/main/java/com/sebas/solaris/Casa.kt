@@ -1,4 +1,4 @@
-package com.sebas.logia
+package com.sebas.solaris
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -75,6 +75,10 @@ object Casa {
     private val dirFotos get() = File(app.filesDir, "fotos").apply { mkdirs() }
     private fun archivoItem(id: String) = File(dirItems, "$id.bin")
     private fun archivoFoto(id: String) = File(dirFotos, "$id.bin")
+    private val dirCintas get() = File(app.filesDir, "cintas").apply { mkdirs() }
+
+    /** El audio de una cinta: vive solo en este celular. */
+    fun archivoCinta(id: String) = File(dirCintas, "$id.wav")
 
     fun iniciar(ctx: Context) {
         if (::app.isInitialized) return
@@ -144,9 +148,6 @@ object Casa {
             .put("rwrapped", Crypto.b64(renvuelta))
         s.guardarBoveda(boveda)
         instalar(email.trim(), m, boveda)
-        val ahora = System.currentTimeMillis()
-        listOf("Sueños" to 2, "Desahogos" to 0, "Memorias extrañas" to 1, "Lluvias" to 3)
-            .forEachIndexed { i, (nombre, color) -> guardarInterno(Item.cuarto(nombre, color, ahora + i)) }
         codigo
     }
 
@@ -286,6 +287,7 @@ object Casa {
         cerrar()
         dirItems.listFiles()?.forEach { it.delete() }
         dirFotos.listFiles()?.forEach { it.delete() }
+        dirCintas.listFiles()?.forEach { it.delete() }
         val url = prefs.getString("supa_url", null)
         val key = prefs.getString("supa_key", null)
         prefs.edit().clear().putString("supa_url", url).putString("supa_key", key).apply()
@@ -392,6 +394,63 @@ object Casa {
             in 11..17 -> "¿Qué viste hoy?" to "Memorias extrañas"
             else -> "¿Qué cargas hoy?" to "Desahogos"
         }
+    }
+
+
+    // ---------------- notas, cintas y búsqueda ----------------
+
+    fun notas(): List<Item> = items.filter { it.esEntrada && !it.deleted }.sortedByDescending { it.created }
+    fun cintas(): List<Item> = items.filter { it.esCinta && !it.deleted }.sortedByDescending { it.created }
+
+    fun borrarNota(id: String) {
+        val previo = porId(id) ?: return
+        olvidarFotos(previo.photos)
+        guardar(previo.copy(title = "", text = "", photos = emptyList(), updated = System.currentTimeMillis(), deleted = true))
+    }
+
+    /** Registra una cinta recién grabada. El audio queda en el celular; a la nube sube solo su ficha y su texto. */
+    fun nuevaCinta(id: String, nombre: String, duracion: Long, creada: Long) {
+        // se guarda en el acto: puede llamarse justo antes de que el telón se cierre
+        guardarInterno(Item(id = id, kind = "cinta", room = null, title = nombre, text = "", photos = emptyList(),
+            color = 0, created = creada, updated = System.currentTimeMillis(), dur = duracion))
+        sincronizar()
+    }
+
+    fun renombrarCinta(id: String, nombre: String) {
+        val c = porId(id) ?: return
+        guardar(c.copy(title = nombre.trim(), updated = System.currentTimeMillis()))
+    }
+
+    fun borrarCinta(id: String) {
+        val c = porId(id) ?: return
+        archivoCinta(id).delete()
+        guardar(c.copy(title = "", text = "", updated = System.currentTimeMillis(), deleted = true))
+    }
+
+    /** Lo que el océano devuelve para una consulta de la terminal. */
+    fun buscar(consulta: String): List<Item> {
+        val q = consulta.trim().lowercase()
+        val todo = items.filter { (it.esEntrada || it.esCinta) && !it.deleted }.sortedByDescending { it.created }
+        if (q.isEmpty()) return emptyList()
+        val hoy = Calendar.getInstance()
+        fun mismoDia(t: Long, c: Calendar): Boolean {
+            val x = Calendar.getInstance().apply { timeInMillis = t }
+            return x.get(Calendar.YEAR) == c.get(Calendar.YEAR) && x.get(Calendar.DAY_OF_YEAR) == c.get(Calendar.DAY_OF_YEAR)
+        }
+        return when (q) {
+            "hoy" -> todo.filter { mismoDia(it.created, hoy) }
+            "ayer" -> { val a = (hoy.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -1) }; todo.filter { mismoDia(it.created, a) } }
+            "notas" -> todo.filter { it.esEntrada }
+            "cintas" -> todo.filter { it.esCinta }
+            "todo" -> todo
+            else -> todo.filter { (it.title + " " + it.text).lowercase().contains(q) }
+        }
+    }
+
+    fun temas(): List<Pair<String, Int>> {
+        val r = Regex("#[\\p{L}0-9_]+")
+        return notas().flatMap { n -> r.findAll(n.text + " " + n.title).map { it.value.lowercase() }.toSet() }
+            .groupingBy { it }.eachCount().toList().sortedByDescending { it.second }
     }
 
     // ---------------- fotos ----------------

@@ -7,15 +7,15 @@ plugins {
 fun secreto(nombre: String): String = (System.getenv(nombre) ?: "").trim().replace("\"", "")
 
 android {
-    namespace = "com.sebas.logia"
+    namespace = "com.sebas.solaris"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.sebas.logia"
+        applicationId = "com.sebas.solaris"
         minSdk = 26
         targetSdk = 34
         versionCode = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
-        versionName = "0.1." + (System.getenv("GITHUB_RUN_NUMBER") ?: "0")
+        versionName = "0.2." + (System.getenv("GITHUB_RUN_NUMBER") ?: "0")
         // Se llenan desde los secretos de GitHub. Si están vacíos, la app los pide al abrirse.
         buildConfigField("String", "SUPABASE_URL", "\"${secreto("SUPABASE_URL")}\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${secreto("SUPABASE_ANON_KEY")}\"")

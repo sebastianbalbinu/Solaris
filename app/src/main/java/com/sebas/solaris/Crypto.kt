@@ -1,4 +1,4 @@
-package com.sebas.logia
+package com.sebas.solaris
 
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
@@ -71,7 +71,7 @@ object Crypto {
  * Con ella se guarda la llave maestra y la sesión, para que el PIN o la huella basten cada día.
  */
 object LlaveDelCelular {
-    private const val ALIAS = "logia_casa"
+    private const val ALIAS = "solaris_casa"
 
     private fun llave(): SecretKey {
         val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }

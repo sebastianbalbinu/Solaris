@@ -1,4 +1,4 @@
-package com.sebas.logia
+package com.sebas.solaris
 
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
