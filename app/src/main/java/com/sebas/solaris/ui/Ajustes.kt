@@ -47,7 +47,7 @@ fun Ajustes() {
     }
     BackHandler(enabled = !salir && !letra) { Nav.ajustes = false }
 
-    Box(Modifier.fillMaxSize().background(p.fondo)) {
+    Box(Modifier.fillMaxSize().background(p.fondo).systemBarsPadding()) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -55,7 +55,7 @@ fun Ajustes() {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Redondo(alTocar = { Nav.ajustes = false }) { IconoAtras(p.texto) }
                 Spacer(Modifier.width(14.dp))
-                TituloSerif("Ajustes", tam = 32)
+                TituloSerif("Ajustes", tam = 34)
             }
             Spacer(Modifier.height(10.dp))
 

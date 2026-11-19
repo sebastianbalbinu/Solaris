@@ -154,7 +154,7 @@ fun Cinta() {
     val parpadeo by transicion.animateFloat(0.25f, 1f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "rec")
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        BoxWithConstraints(Modifier.fillMaxSize().padding(top = 10.dp, bottom = 84.dp), contentAlignment = Alignment.TopCenter) {
+        BoxWithConstraints(Modifier.fillMaxSize().systemBarsPadding().padding(top = 8.dp, bottom = 84.dp), contentAlignment = Alignment.TopCenter) {
             val ancho: Dp = minOf(maxWidth - 16.dp, maxHeight * (ANCHO / ALTO))
             val u = ancho.value / ANCHO
             fun d(v: Float): Dp = (v * u).dp

@@ -7,6 +7,18 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
+import kotlin.math.max
+import kotlin.math.roundToInt
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -53,22 +65,24 @@ fun Pildora(
     primaria: Boolean = true,
     habilitada: Boolean = true,
     icono: (@Composable () -> Unit)? = null,
+    fondo: Color? = null,
+    tinta: Color? = null,
     alTocar: () -> Unit,
 ) {
     val p = Tema.p
     Row(
         modifier
+            .presionable(habilitada) { Sonidos.tic(); alTocar() }
             .alpha(if (habilitada) 1f else 0.4f)
             .height(50.dp)
             .clip(CircleShape)
-            .background(if (primaria) p.boton else p.superficie)
-            .clickable(enabled = habilitada) { Sonidos.tic(); alTocar() }
+            .background(fondo ?: if (primaria) p.boton else p.superficie)
             .padding(horizontal = 22.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
         if (icono != null) { icono(); Spacer(Modifier.width(8.dp)) }
-        Text(texto, color = if (primaria) p.botonTexto else p.texto, fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 16.sp)
+        Text(texto, color = tinta ?: if (primaria) p.botonTexto else p.texto, fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 16.sp)
     }
 }
 
@@ -76,8 +90,7 @@ fun Pildora(
 @Composable
 fun Redondo(modifier: Modifier = Modifier, tam: Dp = 44.dp, fondo: Color? = null, alTocar: () -> Unit, contenido: @Composable () -> Unit) {
     Box(
-        modifier.size(tam).clip(CircleShape).background(fondo ?: Tema.p.superficie)
-            .clickable { Sonidos.tic(); alTocar() },
+        modifier.presionable { Sonidos.tic(); alTocar() }.size(tam).clip(CircleShape).background(fondo ?: Tema.p.superficie),
         contentAlignment = Alignment.Center,
     ) { contenido() }
 }
@@ -148,7 +161,11 @@ fun Hoja(visible: Boolean, alCerrar: () -> Unit, contenido: @Composable ColumnSc
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { alCerrar() }
         )
     }
-    AnimatedVisibility(visible, enter = slideInVertically { it }, exit = slideOutVertically { it }) {
+    AnimatedVisibility(
+        visible,
+        enter = slideInVertically(spring(dampingRatio = 0.86f, stiffness = 380f)) { it },
+        exit = slideOutVertically(tween(220)) { it },
+    ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
             Column(
                 Modifier.fillMaxWidth()
@@ -156,7 +173,8 @@ fun Hoja(visible: Boolean, alCerrar: () -> Unit, contenido: @Composable ColumnSc
                     .background(if (Tema.esNoche) Color(0xFF111113) else Color(0xFFF8F0E3))
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
                     .padding(horizontal = 24.dp, vertical = 14.dp)
-                    .navigationBarsPadding(),
+                    .navigationBarsPadding()
+                    .imePadding(),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Box(Modifier.align(Alignment.CenterHorizontally).size(width = 36.dp, height = 5.dp).clip(CircleShape).background(Tema.p.linea))
@@ -190,7 +208,7 @@ fun Teclado(alDigito: (Char) -> Unit, alBorrar: () -> Unit, colorTexto: Color, f
 @Composable
 private fun Tecla(texto: String, colorTexto: Color, fondo: Color, alTocar: () -> Unit) {
     Box(
-        Modifier.size(76.dp).clip(CircleShape).background(fondo).clickable { Sonidos.tic(); alTocar() },
+        Modifier.presionable { Sonidos.tic(); alTocar() }.size(76.dp).clip(CircleShape).background(fondo),
         contentAlignment = Alignment.Center,
     ) { Text(texto, color = colorTexto, fontFamily = Sans, fontSize = 30.sp) }
 }
@@ -202,6 +220,66 @@ fun Puntos(llenos: Int, total: Int, color: Color) {
             Box(Modifier.size(13.dp).clip(CircleShape).background(if (i < llenos) color else Color.Transparent).border(1.2.dp, color, CircleShape))
         }
     }
+}
+
+/**
+ * Pixel art vivo a pantalla completa. Calcula una escala entera para esta pantalla:
+ * así todos los píxeles miden exactamente lo mismo.
+ */
+@Composable
+fun <T : Pixelador> PixelVivo(
+    modifier: Modifier,
+    intervaloMs: Long,
+    crear: (Int, Int) -> T,
+    paso: (T, Double) -> Unit,
+) {
+    BoxWithConstraints(modifier.clipToBounds()) {
+        val wPx = constraints.maxWidth
+        val hPx = constraints.maxHeight
+        val escala = max(2, (wPx / 130f).roundToInt())
+        val ancho = (wPx + escala - 1) / escala
+        val alto = (hPx + escala - 1) / escala
+        val r = remember(ancho, alto) { crear(ancho, alto) }
+        val bmp = remember(ancho, alto) { Bitmap.createBitmap(ancho, alto, Bitmap.Config.ARGB_8888) }
+        val imagen = remember(bmp) { bmp.asImageBitmap() }
+        var cuadro by remember { mutableIntStateOf(0) }
+        LaunchedEffect(r) {
+            val inicio = System.currentTimeMillis()
+            while (isActive) {
+                val seg = (System.currentTimeMillis() - inicio) / 1000.0
+                withContext(Dispatchers.Default) { paso(r, seg) }
+                bmp.setPixels(r.px, 0, ancho, 0, 0, ancho, alto)
+                cuadro++
+                delay(intervaloMs)
+            }
+        }
+        Canvas(Modifier.fillMaxSize()) {
+            cuadro
+            drawImage(
+                imagen,
+                srcOffset = IntOffset.Zero,
+                srcSize = IntSize(ancho, alto),
+                dstOffset = IntOffset.Zero,
+                dstSize = IntSize(ancho * escala, alto * escala),
+                filterQuality = FilterQuality.None,
+            )
+        }
+    }
+}
+
+/** El botón se hunde un poco al tocarlo, con un rebote suave. */
+@Composable
+fun Modifier.presionable(habilitado: Boolean = true, alTocar: () -> Unit): Modifier {
+    val fuente = remember { MutableInteractionSource() }
+    val presionado by fuente.collectIsPressedAsState()
+    val escala by animateFloatAsState(
+        if (presionado && habilitado) 0.94f else 1f,
+        spring(dampingRatio = 0.55f, stiffness = 520f),
+        label = "presion",
+    )
+    return this
+        .graphicsLayer { scaleX = escala; scaleY = escala }
+        .clickable(interactionSource = fuente, indication = null, enabled = habilitado) { alTocar() }
 }
 
 /** Dibuja un bitmap pequeño ampliado sin suavizar: el pixel art se ve nítido. */
@@ -338,5 +416,22 @@ fun IconoParlante(color: Color, encendido: Boolean, tam: Dp = 20.dp) {
             drawLine(color, Offset(s * 0.66f, s * 0.38f), Offset(s * 0.88f, s * 0.62f), g, StrokeCap.Round)
             drawLine(color, Offset(s * 0.88f, s * 0.38f), Offset(s * 0.66f, s * 0.62f), g, StrokeCap.Round)
         }
+    }
+}
+
+/** La línea del horizonte del logo: se abre desde el centro, con su marca vertical. */
+@Composable
+fun Horizonte(progreso: Float, color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier.height(14.dp)) {
+        val y = size.height / 2
+        val medio = size.width / 2
+        val mitad = medio * progreso
+        if (mitad <= 0f) return@Canvas
+        val pincel = androidx.compose.ui.graphics.Brush.horizontalGradient(
+            0f to color.copy(alpha = 0f), 0.18f to color, 0.82f to color, 1f to color.copy(alpha = 0f),
+            startX = medio - mitad, endX = medio + mitad,
+        )
+        drawLine(pincel, Offset(medio - mitad, y), Offset(medio + mitad, y), strokeWidth = 1.2.dp.toPx())
+        drawLine(color.copy(alpha = progreso), Offset(medio, 0f), Offset(medio, size.height), strokeWidth = 1.2.dp.toPx())
     }
 }

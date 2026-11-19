@@ -55,6 +55,12 @@ object Sonidos {
         vibrar(fuerte = false)
     }
 
+    /** Un tic muy suave, sin vibración: el arranque escribiéndose. */
+    fun teclear() { pool?.play(tic, 0.12f, 0.12f, 0, 0, 1.25f) }
+
+    /** El acople con la estación: una vibración firme. */
+    fun acople() { vibrar(fuerte = true) }
+
     private fun vibrar(fuerte: Boolean) {
         val v = vibrador ?: return
         try {

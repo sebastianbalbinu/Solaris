@@ -41,22 +41,11 @@ private val Calido = Color(0xFFF2C2A6)
 
 @Composable
 fun Oceano() {
-    val oceano = remember { OceanoPixel() }
-    val bmp = remember { Bitmap.createBitmap(oceano.ancho, oceano.alto, Bitmap.Config.ARGB_8888) }
-    var cuadro by remember { mutableIntStateOf(0) }
     var consulta by remember { mutableStateOf("") }
     var mostrada by remember { mutableStateOf("") }
     var verTemas by remember { mutableStateOf(false) }
     val mar = Clima.mar
 
-    LaunchedEffect(Unit) {
-        while (isActive) {
-            withContext(Dispatchers.Default) { oceano.cuadro(Clima.mar, 0.085) }
-            bmp.setPixels(oceano.px, 0, oceano.ancho, 0, 0, oceano.ancho, oceano.alto)
-            cuadro++
-            delay(85)
-        }
-    }
     LaunchedEffect(Unit) {
         while (isActive) { Clima.actualizar(); delay(15 * 60 * 1000L) }
     }
@@ -75,10 +64,15 @@ fun Oceano() {
     }
 
     Box(Modifier.fillMaxSize().background(Color(0xFF05080C))) {
-        LienzoPixel(bmp, cuadro, Modifier.fillMaxSize())
+        PixelVivo(
+            Modifier.fillMaxSize(),
+            intervaloMs = 85,
+            crear = { w, h -> OceanoPixel(w, h) },
+            paso = { o, _ -> o.cuadro(Clima.mar, 0.085) },
+        )
         Box(Modifier.fillMaxWidth().height(190.dp).background(Brush.verticalGradient(listOf(Color(0x99050810), Color.Transparent))))
 
-        Column(Modifier.padding(horizontal = 24.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Column(Modifier.statusBarsPadding().padding(horizontal = 24.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(Modifier.fillMaxWidth()) {
                 Senal("Solaris · alta mar", Modifier.weight(1f), color = Claro)
                 Senal("${mar.horaLocal()} local", color = Claro)
@@ -99,10 +93,10 @@ fun Oceano() {
             }
         }
 
-        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().imePadding()) {
             Box(Modifier.fillMaxWidth().height(70.dp).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xF0040608)))))
             Column(
-                Modifier.fillMaxWidth().background(Color(0xF0040608)).padding(start = 24.dp, end = 24.dp, bottom = 92.dp),
+                Modifier.fillMaxWidth().background(Color(0xF0040608)).navigationBarsPadding().padding(start = 24.dp, end = 24.dp, bottom = 92.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 if (verTemas) {

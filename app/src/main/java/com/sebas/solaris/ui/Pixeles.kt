@@ -14,6 +14,13 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.random.Random
 
+/** Algo que se dibuja en una cuadrícula pequeña de píxeles. */
+interface Pixelador {
+    val ancho: Int
+    val alto: Int
+    val px: IntArray
+}
+
 private val BAYER = intArrayOf(0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5)
 
 private fun cl(v: Double) = if (v < 0) 0.0 else if (v > 1) 1.0 else v
@@ -42,10 +49,8 @@ private fun poner(px: IntArray, w: Int, x: Int, y: Int, c: C3, paso: Double) {
  * El océano del Paso de Drake en pixel art.
  * Seis trenes de olas con la velocidad que tendrían en mar profundo según su período.
  */
-class OceanoPixel {
-    val ancho = 130
-    val alto = 281
-    val px = IntArray(ancho * alto)
+class OceanoPixel(override val ancho: Int = 130, override val alto: Int = 281) : Pixelador {
+    override val px = IntArray(ancho * alto)
 
     private var t = 0.0
     private var ola = 3.0; private var periodo = 11.0; private var viento = 20.0; private var nubes = 0.8
@@ -53,11 +58,15 @@ class OceanoPixel {
     private var flash = 0
     private var rayo: IntArray? = null
     private val gotas = ArrayList<DoubleArray>()
-    private val estrellas = Array(60) { intArrayOf(Random.nextInt(130), Random.nextInt(80), Random.nextInt(600)) }
-    private val fases = doubleArrayOf(0.0, 1.7, 3.1, 4.4, 5.6, 2.2)
-    private val angulos = doubleArrayOf(0.05, 0.42, -0.5, 1.05, -1.2, 0.2)
-    private val largos = doubleArrayOf(1.0, 0.63, 0.47, 0.31, 0.21, 0.12)
-    private val alturas = doubleArrayOf(0.5, 0.3, 0.22, 0.13, 0.08, 0.05)
+    private val estrellas = Array(60) { intArrayOf(Random.nextInt(ancho), Random.nextInt(max(1, (alto * 0.28).toInt())), Random.nextInt(600)) }
+    private val esc = alto / 281.0
+    private val SW_ANG = doubleArrayOf(0.05, 0.42, -0.5)
+    private val SW_LARGO = doubleArrayOf(1.0, 0.63, 0.41)
+    private val SW_ALTO = doubleArrayOf(0.55, 0.3, 0.15)
+    private val SW_FASE = doubleArrayOf(0.0, 1.7, 3.1)
+    private val WI_LAMBDA = doubleArrayOf(14.0, 9.5, 6.3, 4.1, 2.7, 1.8)
+    private val WI_ANG = doubleArrayOf(0.3, -0.45, 0.75, -0.9, 0.15, -0.25)
+    private val WI_FASE = doubleArrayOf(0.4, 2.2, 4.1, 1.3, 5.2, 3.3)
     private var primera = true
 
     private val cA = c3(0, 0, 0); private val cB = c3(0, 0, 0); private val tmp = c3(0, 0, 0); private val tmp2 = c3(0, 0, 0)
@@ -79,15 +88,20 @@ class OceanoPixel {
         luz += (luzMeta * 0.85 - luz) * k; alba += (albaMeta - alba) * k; rayos += ((if (m.rayos) 1.0 else 0.0) - rayos) * k
 
         val W = ancho; val H = alto
-        val hz = (96 + sin(t * 2 * PI / periodo) * ola * 0.55).roundToInt()
+        val hz = (H * 0.34 + sin(t * 2 * PI / periodo) * ola * 0.55 * esc).roundToInt()
+        val solX = W * 0.71
 
         val cieloArriba = c3(0, 0, 0); lerp(c3(6, 10, 18), c3(58, 92, 126), luz, cieloArriba)
         tmp.set(12.0, 15.0, 20.0).mix(104.0, 112.0, 118.0, luz); cieloArriba.mix(tmp, nubes)
         val cieloAbajo = c3(26, 38, 54).mix(164.0, 184.0, 196.0, luz)
         tmp.set(30.0, 36.0, 44.0).mix(150.0, 156.0, 160.0, luz); cieloAbajo.mix(tmp, nubes)
         val niebla = c3(34, 42, 50).mix(168.0, 174.0, 176.0, luz)
-        val hondo = c3(3, 10, 16).mix(16.0, 44.0, 56.0, luz)
-        val verde = c3(8, 22, 28).mix(34.0, 74.0, 78.0, luz)
+        // el mar: abismo azul marino, cuerpo petróleo, luz turquesa en las crestas y cielo de acero en lo lejano
+        val abismo = c3(2, 8, 18).mix(9.0, 34.0, 58.0, luz)
+        val petroleo = c3(4, 19, 32).mix(20.0, 66.0, 88.0, luz)
+        val corriente = c3(3, 16, 40).mix(16.0, 54.0, 104.0, luz)
+        val turquesa = c3(12, 44, 54).mix(52.0, 126.0, 132.0, luz)
+        val acero = c3(18, 30, 44).mix(104.0, 134.0, 152.0, luz)
         val espuma = c3(150, 170, 178).mix(226.0, 234.0, 236.0, luz)
         val albaC = c3(236, 186, 142)
         if (flash > 0) { cieloArriba.mix(190.0, 204.0, 224.0, 0.6); cieloAbajo.mix(210.0, 220.0, 236.0, 0.6) }
@@ -99,7 +113,7 @@ class OceanoPixel {
             for (x in 0 until W) {
                 lerp(cieloArriba, cieloAbajo, f.pow(1.4), col)
                 if (alba > 0.01) {
-                    val dx = (x - 92) / 40.0; val dy = (hz - y) / 26.0
+                    val dx = (x - solX) / (W * 0.31); val dy = (hz - y) / (H * 0.093)
                     col.mix(albaC, cl(alba * (1 - dx * dx - dy) * 0.8) * (1 - nubes * 0.6))
                 }
                 val n = sin(x * 0.07 + t * viento * 0.004 + y * 0.03) + sin(x * 0.13 - y * 0.21 + t * 0.05) * 0.7 +
@@ -109,7 +123,7 @@ class OceanoPixel {
                 col.mix(tmp2, cubre * (0.5 + nubes * 0.5))
                 if (flash > 0) col.mix(220.0, 228.0, 240.0, 0.35 * cubre)
                 col.mix(niebla, cl(f.pow(3) * (1 - min(1.0, vis / 12)) * 0.9))
-                poner(px, W, x, y, col, 18.0)
+                poner(px, W, x, y, col, 12.0)
             }
         }
         if (luz < 0.3 && nubes < 0.8) {
@@ -123,6 +137,7 @@ class OceanoPixel {
         val L = 9.81 * periodo * periodo / (2 * PI)
         val a0 = ola / 2
         val picado = cl(viento / 45)
+        val fuerzaViento = 0.25 + picado * 0.9
         for (yy in max(hz, 0) until H) {
             val v = (yy - hz + 1).toDouble() / (H - hz)
             val z = 14 / v
@@ -130,30 +145,56 @@ class OceanoPixel {
             val nb = 1 - exp(-z / (vis * 450 + 30))
             for (x2 in 0 until W) {
                 val xw = ((x2 + 0.5) / W - 0.5) * z * 1.15
+                // mar de fondo: olas largas según el período real
                 var h = 0.0; var hx = 0.0; var hzz = 0.0
-                for (w in 0 until 6) {
-                    val kk = 2 * PI / (L * largos[w])
+                for (w in 0 until 3) {
+                    val kk = 2 * PI / (L * SW_LARGO[w])
                     val om = sqrt(9.81 * kk)
-                    val a = a0 * alturas[w] * (if (w > 2) 0.5 + picado else 1.0)
-                    val ddx = sin(angulos[w]); val ddz = cos(angulos[w])
-                    val th = kk * (ddx * xw + ddz * z) - om * t + fases[w]
-                    val s = sin(th); val co = cos(th)
-                    h += a * s; hx += a * kk * ddx * co; hzz += a * kk * ddz * co
+                    val a = a0 * SW_ALTO[w]
+                    val ddx = sin(SW_ANG[w]); val ddz = cos(SW_ANG[w])
+                    val th = kk * (ddx * xw + ddz * z) - om * t + SW_FASE[w]
+                    val co = cos(th)
+                    h += a * sin(th); hx += a * kk * ddx * co; hzz += a * kk * ddz * co
                 }
-                val refl = cl(0.45 - hzz * 2.6 + hx * 0.4)
-                lerp(hondo, verde, cl(0.3 + h / (a0 + 0.01) * 0.35 + refl * 0.3), col)
-                col.mix(cieloAbajo, refl * fres * 0.75)
-                val empinada = sqrt(hx * hx + hzz * hzz)
+                // mar de viento: olas cortas que le dan textura al agua
+                var hs = 0.0; var sx = 0.0; var sz = 0.0
+                for (w in 0 until 6) {
+                    val lam = WI_LAMBDA[w]
+                    val kk = 2 * PI / lam
+                    val om = sqrt(9.81 * kk)
+                    val aten = exp(-z / (lam * 22))
+                    val a = 0.045 * lam * fuerzaViento * 0.5 * aten
+                    val ddx = sin(WI_ANG[w]); val ddz = cos(WI_ANG[w])
+                    val th = kk * (ddx * xw + ddz * z) - om * t + WI_FASE[w]
+                    val co = cos(th)
+                    hs += a * sin(th); sx += a * kk * ddx * co; sz += a * kk * ddz * co
+                }
+                val refl = cl(0.42 - (hzz * 2.5 + sz) * 1.6 + (hx * 2.5 + sx) * 0.35)
                 val cresta = h / (a0 * 1.05 + 0.01)
-                if (cresta > 0.62 - picado * 0.25 && empinada > 0.16 - picado * 0.08) col.mix(espuma, cl((cresta - 0.55) * 2.2) * (0.35 + picado * 0.65))
-                if (alba > 0.01 && abs(x2 - 92) < 3 + v * 22 && refl > 0.55) col.mix(albaC, alba * 0.55 * (1 - nubes * 0.5) * (1 - v))
+                lerp(abismo, petroleo, cl(0.42 + cresta * 0.55 + refl * 0.25), col)
+                // corrientes: manchas lentas de azul más frío
+                val manchas = sin(xw * 0.012 + z * 0.008 + t * 0.03) * 0.5 + sin(xw * 0.029 - z * 0.016 - t * 0.02) * 0.5
+                col.mix(corriente, cl(manchas * 0.35 + 0.2))
+                // la luz atraviesa la cresta: turquesa en las caras que miran hacia ti
+                col.mix(turquesa, cl((cresta - 0.15) * 1.3) * cl(-hzz * 3.0 + 0.3) * 0.7)
+                lerp(acero, cieloAbajo, 0.45, tmp2)
+                col.mix(tmp2, refl * fres * 0.6)
+                col.mix(acero, (1 - v) * (1 - v) * 0.38)
+                // borreguitos: crestas cortas que rompen, en grupos, más con viento
+                val hsn = hs / (0.045 * 14 * fuerzaViento * 0.5 * 1.6 + 1e-6)
+                val umbral = 1.08 - picado * 0.5 - cl(cresta) * 0.3
+                val grupos = cl((sin(xw * 0.07 + z * 0.05 + t * 0.2) * sin(xw * 0.031 - z * 0.09 - t * 0.15) + 0.15) * 2.5)
+                val blanco = cl((hsn - umbral) * 5) * cl((picado - 0.3) * 2.2) * grupos * cl(-sz * 4 + 0.6)
+                if (blanco > 0) col.mix(espuma, blanco * 0.9)
+                if (alba > 0.01 && abs(x2 - solX) < (3 + v * 22) * W / 130.0 && refl > 0.55) col.mix(albaC, alba * 0.55 * (1 - nubes * 0.5) * (1 - v))
                 col.mix(niebla, cl(nb))
                 if (flash > 0) col.mix(170.0, 186.0, 204.0, 0.25)
-                poner(px, W, x2, yy, col, 18.0)
+                poner(px, W, x2, yy, col, 12.0)
             }
         }
 
-        val cuantas = min(170, (lluvia * 26).roundToInt())
+        val area = W * H / (130.0 * 281.0)
+        val cuantas = min((170 * area).toInt(), (lluvia * 26 * area).roundToInt())
         while (gotas.size < cuantas) gotas.add(doubleArrayOf(Random.nextDouble() * W, Random.nextDouble() * H))
         while (gotas.size > cuantas) gotas.removeAt(gotas.size - 1)
         val lado = viento / 30
@@ -174,7 +215,7 @@ class OceanoPixel {
         if (rayos > 0.7 && flash <= 0 && Random.nextDouble() < 0.01) {
             flash = 5
             val r = IntArray(max(2, hz) * 2)
-            var rx = 20 + Random.nextInt(90); var ry = 0; var i = 0
+            var rx = (W * 0.15).toInt() + Random.nextInt(max(1, (W * 0.7).toInt())); var ry = 0; var i = 0
             while (ry < hz - 2 && i + 1 < r.size) {
                 r[i] = rx; r[i + 1] = ry; i += 2; ry++
                 rx += Random.nextInt(3) - 1
@@ -198,13 +239,11 @@ class OceanoPixel {
  * La Tierra vista desde la estación, en pixel art: horizonte curvo, nubes sobre la esfera (sin costuras),
  * reflejo del sol y tormentas en el lado de noche.
  */
-class PlanetaPixel {
-    val ancho = 130
-    val alto = 281
-    val px = IntArray(ancho * alto)
+class PlanetaPixel(override val ancho: Int = 130, override val alto: Int = 281) : Pixelador {
+    override val px = IntArray(ancho * alto)
 
     private val perm = IntArray(512)
-    private val estrellas = Array(110) { intArrayOf(Random.nextInt(130), Random.nextInt(190), Random.nextInt(600)) }
+    private val estrellas = Array(110) { intArrayOf(Random.nextInt(ancho), Random.nextInt(max(1, (alto * 0.68).toInt())), Random.nextInt(600)) }
     private val destellos = ArrayList<DoubleArray>()
     private var t = 0.0
     private val col = c3(0, 0, 0); private val mar = c3(0, 0, 0); private val blanco = c3(0, 0, 0)
@@ -252,7 +291,11 @@ class PlanetaPixel {
                     val nube = fbm(qx * 3.4 + 7, qy * 3.4, qz * 3.4)
                     val remolino = ruido(qx * 9 + t * 0.05, qy * 9, qz * 9)
                     val cub = cl((nube + remolino * 0.18 - 0.5) * 4.5)
-                    mar.set(3.0, 8.0, 18.0).mix(20.0, 62.0, 104.0, dia)
+                    // océanos con matices: azul marino, petróleo y algo de turquesa
+                    val matiz = ruido(qx * 5 + 3, qy * 5, qz * 5)
+                    mar.set(3.0, 8.0, 18.0).mix(14.0, 50.0, 96.0, dia)
+                    blanco.set(4.0, 14.0, 22.0).mix(24.0, 88.0, 112.0, dia)
+                    mar.mix(blanco, cl((matiz - 0.35) * 1.6))
                     val brillo = exp(-((nx - 0.55) * (nx - 0.55) + (ny - 0.86) * (ny - 0.86)) * 60) * dia
                     mar.mix(250.0, 238.0, 214.0, cl(brillo * 0.9))
                     blanco.set(16.0, 20.0, 28.0).mix(226.0, 232.0, 238.0, dia)

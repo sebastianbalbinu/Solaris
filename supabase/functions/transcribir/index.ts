@@ -3,6 +3,11 @@
 // La llave vive solo aquí, como secreto GROQ_API_KEY; el audio no se guarda.
 Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response("Solo POST", { status: 405 });
+  // solo personas con sesión iniciada en tu Supabase pueden usar tu llave
+  const sesion = await fetch(`${Deno.env.get("SUPABASE_URL")}/auth/v1/user`, {
+    headers: { Authorization: req.headers.get("Authorization") ?? "", apikey: Deno.env.get("SUPABASE_ANON_KEY") ?? "" },
+  });
+  if (!sesion.ok) return Response.json({ error: "Sesión no válida" }, { status: 401 });
   const llave = Deno.env.get("GROQ_API_KEY");
   if (!llave) {
     return Response.json({ error: "Falta GROQ_API_KEY en los secretos de Supabase" }, { status: 500 });

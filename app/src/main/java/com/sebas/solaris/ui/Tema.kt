@@ -160,3 +160,14 @@ object Tema {
         }
     }
 }
+
+/** La escala tipográfica de la estación: pocos tamaños, siempre los mismos. */
+object Tipo {
+    const val PORTADA = 46
+    const val TITULO = 34
+    const val ENCABEZADO = 23
+    const val CUERPO = 17
+    const val SECUNDARIO = 15
+    const val NOTA = 13
+    const val SENAL = 10
+}

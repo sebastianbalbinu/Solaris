@@ -2,9 +2,23 @@ package com.sebas.solaris.ui
 
 import android.graphics.Bitmap
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
+import androidx.compose.ui.graphics.graphicsLayer
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.haze
+import dev.chrisbanes.haze.hazeChild
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyListState
@@ -38,6 +52,7 @@ import kotlinx.coroutines.withContext
 
 /** Dónde está uno dentro de la estación. Sobrevive al cierre. */
 object Nav {
+    var enPortada by mutableStateOf(false)
     var pestana by mutableStateOf("cuaderno")
     var borrador by mutableStateOf<Borrador?>(null)
     var ajustes by mutableStateOf(false)
@@ -56,21 +71,23 @@ object Nav {
 fun Solaris(act: MainActivity) {
     val p = Tema.p
     val vista = LocalView.current
-    val oscuro = Tema.esNoche || (Casa.abierta && (Nav.pestana != "cuaderno" || Nav.ajustes)) || !Casa.abierta
+    val pantallaOscura = when {
+        !Casa.conectada || !Casa.lista -> Tema.esNoche || Nav.enPortada
+        !Casa.abierta -> true
+        Nav.borrador != null || Nav.ajustes || Nav.cambiarPin -> Tema.esNoche
+        else -> Tema.esNoche || Nav.pestana != "cuaderno"
+    }
     SideEffect {
-        val fondo = if (oscuro) Color.Black else p.fondo
-        act.window.statusBarColor = fondo.toArgb()
-        act.window.navigationBarColor = fondo.toArgb()
         val c = WindowCompat.getInsetsController(act.window, vista)
-        c.isAppearanceLightStatusBars = !oscuro
-        c.isAppearanceLightNavigationBars = !oscuro
+        c.isAppearanceLightStatusBars = !pantallaOscura
+        c.isAppearanceLightNavigationBars = !pantallaOscura
     }
     LaunchedEffect(Unit) {
         while (isActive) { delay(60_000); Tema.tic() }
     }
     LaunchedEffect(Unit) { Clima.actualizar() }
 
-    Box(Modifier.fillMaxSize().background(if (Casa.abierta) p.fondo else Color.Black)) {
+    Box(Modifier.fillMaxSize().background(if (Casa.abierta || !Casa.lista) p.fondo else Color.Black)) {
         when {
             !Casa.conectada -> Conectar()
             !Casa.lista -> Bienvenida(act)
@@ -84,44 +101,47 @@ fun Solaris(act: MainActivity) {
 
 @Composable
 fun Entrada(act: MainActivity) {
-    val planeta = remember { PlanetaPixel() }
-    val bmp = remember { Bitmap.createBitmap(planeta.ancho, planeta.alto, Bitmap.Config.ARGB_8888) }
-    var cuadro by remember { mutableIntStateOf(0) }
     var paso by remember { mutableIntStateOf(0) }
-    var altitud by remember { mutableIntStateOf(520) }
+    var llegada by remember { mutableStateOf(0.0) }
     var pinVisible by remember { mutableStateOf(Casa.pinBloqueado()) }
     val conHuella = remember { Casa.huellaActiva() && Huella.disponible(act) }
-
+    var objetivo by remember { mutableStateOf(0f) }
+    LaunchedEffect(Unit) { objetivo = 1f }
+    val aparicion by animateFloatAsState(objetivo, tween(1600), label = "aparicion")
     LaunchedEffect(Unit) {
         val inicio = System.currentTimeMillis()
+        var acoplado = false
         while (isActive) {
-            val seg = (System.currentTimeMillis() - inicio) / 1000.0
-            val llegada = (seg / 3.5).coerceIn(0.0, 1.0)
-            withContext(Dispatchers.Default) { planeta.cuadro(0.07, llegada) }
-            bmp.setPixels(planeta.px, 0, planeta.ancho, 0, 0, planeta.ancho, planeta.alto)
-            cuadro++
-            val e = 1 - Math.pow(1 - llegada, 3.0)
-            altitud = (520 - e * 108).toInt()
-            delay(70)
+            llegada = ((System.currentTimeMillis() - inicio) / 3500.0).coerceIn(0.0, 1.0)
+            if (!acoplado && llegada >= 1.0) { acoplado = true; Sonidos.acople() }
+            if (acoplado) break
+            delay(50)
         }
     }
     LaunchedEffect(Unit) {
-        listOf(600L, 600L, 600L, 600L, 700L).forEach { delay(it); paso++ }
+        listOf(700L, 800L, 800L, 800L, 900L).forEach { delay(it); paso++ }
         if (conHuella && !pinVisible) Huella.pedir(act) { Casa.abrirConCelular() }
     }
+    val e = 1 - Math.pow(1 - llegada, 3.0)
+    val altitud = (520 - e * 108).toInt()
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        LienzoPixel(bmp, cuadro, Modifier.fillMaxSize())
-        Box(Modifier.fillMaxWidth().height(200.dp).background(Brush.verticalGradient(listOf(Color(0xAA000000), Color.Transparent))))
+        PixelVivo(
+            Modifier.fillMaxSize().graphicsLayer { alpha = aparicion },
+            intervaloMs = 70,
+            crear = { w, h -> PlanetaPixel(w, h) },
+            paso = { pl, seg -> pl.cuadro(0.07, (seg / 3.5).coerceIn(0.0, 1.0)) },
+        )
+        Box(Modifier.fillMaxWidth().height(220.dp).background(Brush.verticalGradient(listOf(Color(0xAA000000), Color.Transparent))))
         Box(Modifier.fillMaxWidth().fillMaxHeight(0.55f).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC000000)))))
 
-        Column(Modifier.padding(horizontal = 26.dp, vertical = 22.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.statusBarsPadding().padding(horizontal = 24.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Senal("Estación Solaris · $altitud km", color = Color(0xFFD6EEF2))
             Senal("Bajo nosotros: paso de Drake", color = Color(0xB3D6EEF2))
         }
 
         Column(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 28.dp).padding(bottom = 40.dp),
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(horizontal = 28.dp).padding(bottom = 36.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -133,22 +153,30 @@ fun Entrada(act: MainActivity) {
                 if (paso >= 4) LineaArranque("Bitácora cifrada", "LISTA", gris, hielo)
             }
             Spacer(Modifier.height(30.dp))
-            AnimatedVisibility(paso >= 5, enter = fadeIn(tween(900))) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("SOLARIS", color = Color(0xFFECE6DA), fontFamily = Serif, fontSize = 48.sp, letterSpacing = 9.sp)
-                    val (a, b) = Tema.saludo()
-                    Text("$a $b", color = Color(0xFFCFC8BC), fontFamily = Serif, fontStyle = FontStyle.Italic, fontSize = 20.sp)
-                    Spacer(Modifier.height(30.dp))
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.heightIn(min = 190.dp)) {
+                val visible = paso >= 5
+                val alfa by animateFloatAsState(if (visible) 1f else 0f, tween(1300), label = "titulo")
+                val tracking by animateFloatAsState(if (visible) 9f else 22f, tween(1800, easing = FastOutSlowInEasing), label = "tracking")
+                val linea by animateFloatAsState(if (visible) 1f else 0f, tween(2000, delayMillis = 350, easing = FastOutSlowInEasing), label = "linea")
+                Text("SOLARIS", color = Color(0xFFEFE3CB), fontFamily = Sans, fontSize = 40.sp, letterSpacing = (tracking * 1.25f).sp,
+                    modifier = Modifier.graphicsLayer { alpha = alfa })
+                Horizonte(linea, Color(0xFFEFE3CB).copy(alpha = 0.8f), Modifier.width(250.dp))
+                Spacer(Modifier.height(8.dp))
+                val (a, b) = Tema.saludo()
+                Text("$a $b", color = Color(0xFFCFC8BC), fontFamily = Serif, fontStyle = FontStyle.Italic, fontSize = 20.sp,
+                    modifier = Modifier.graphicsLayer { alpha = alfa })
+                Spacer(Modifier.height(28.dp))
+                if (visible) {
                     if (conHuella) {
                         Box(
-                            Modifier.size(72.dp).clip(CircleShape).background(Color(0x33FFFFFF))
-                                .clickable { Sonidos.tic(); Huella.pedir(act) { Casa.abrirConCelular() } },
+                            Modifier.presionable { Sonidos.tic(); Huella.pedir(act) { Casa.abrirConCelular() } }
+                                .graphicsLayer { alpha = alfa }.size(72.dp).clip(CircleShape).background(Color(0x33FFFFFF)),
                             contentAlignment = Alignment.Center,
                         ) { IconoHuella(Color(0xFFECE6DA)) }
                         Spacer(Modifier.height(10.dp))
                         Enlace("Usar PIN", color = Color(0xFFB9C3C8)) { pinVisible = true }
                     } else {
-                        Pildora("Entrar", Modifier.width(200.dp)) { pinVisible = true }
+                        Pildora("Entrar", Modifier.width(200.dp).graphicsLayer { alpha = alfa }) { pinVisible = true }
                     }
                 }
             }
@@ -160,9 +188,14 @@ fun Entrada(act: MainActivity) {
 
 @Composable
 private fun LineaArranque(que: String, estado: String, gris: Color, hielo: Color) {
+    val total = que.length + estado.length
+    var n by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (n < total) { delay(22); n++; if (n % 3 == 0) Sonidos.teclear() }
+    }
     Row(Modifier.fillMaxWidth()) {
-        Text(que.uppercase(), color = gris, fontFamily = Mono, fontSize = 10.sp, letterSpacing = 1.2.sp, modifier = Modifier.weight(1f))
-        Text(estado.uppercase(), color = hielo, fontFamily = Mono, fontSize = 10.sp, letterSpacing = 1.2.sp)
+        Text(que.take(n).uppercase(), color = gris, fontFamily = Mono, fontSize = 10.sp, letterSpacing = 1.2.sp, modifier = Modifier.weight(1f))
+        Text(estado.take((n - que.length).coerceAtLeast(0)).uppercase(), color = hielo, fontFamily = Mono, fontSize = 10.sp, letterSpacing = 1.2.sp)
     }
 }
 
@@ -225,6 +258,7 @@ private fun Candado(visible: Boolean, alCerrar: () -> Unit) {
 
 // ---------------- adentro ----------------
 
+@OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun Interior() {
     LaunchedEffect(Nav.pendiente) {
@@ -234,40 +268,65 @@ fun Interior() {
         }
         Nav.pendiente = null
     }
+    val vidrio = remember { HazeState() }
+    val b = Nav.borrador
+    val destino: Any = when {
+        Nav.cambiarPin -> "pin"
+        Nav.ajustes -> "ajustes"
+        b != null -> b
+        else -> "pestana:" + Nav.pestana
+    }
     Box(Modifier.fillMaxSize()) {
-        when {
-            Nav.cambiarPin -> Box(Modifier.fillMaxSize().background(Tema.p.fondo)) { PinNuevo { Nav.cambiarPin = false } }
-            Nav.ajustes -> Ajustes()
-            Nav.borrador != null -> Editor(Nav.borrador!!)
-            else -> {
-                when (Nav.pestana) {
-                    "cinta" -> Cinta()
-                    "oceano" -> Oceano()
-                    else -> Cuaderno()
+        AnimatedContent(
+            targetState = destino,
+            modifier = Modifier.fillMaxSize().haze(vidrio),
+            transitionSpec = {
+                if (targetState is Borrador) {
+                    (fadeIn(tween(280)) + scaleIn(tween(320, easing = FastOutSlowInEasing), initialScale = 0.95f)) togetherWith fadeOut(tween(160))
+                } else {
+                    fadeIn(tween(240)) togetherWith fadeOut(tween(180))
                 }
-                BarraPestanas(Modifier.align(Alignment.BottomCenter))
+            },
+            label = "lugares",
+        ) { d ->
+            when (d) {
+                is Borrador -> Editor(d)
+                "pin" -> Box(Modifier.fillMaxSize().background(Tema.p.fondo).systemBarsPadding()) { PinNuevo { Nav.cambiarPin = false } }
+                "ajustes" -> Ajustes()
+                "pestana:cinta" -> Cinta()
+                "pestana:oceano" -> Oceano()
+                else -> Cuaderno()
             }
+        }
+        if (destino is String && destino.startsWith("pestana:")) {
+            BarraPestanas(vidrio, Modifier.align(Alignment.BottomCenter))
         }
     }
 }
 
-/** La barra de abajo: una píldora flotante con los tres lugares. */
+/** La barra de abajo: una píldora flotante de vidrio esmerilado con los tres lugares. */
 @Composable
-fun BarraPestanas(modifier: Modifier = Modifier) {
+fun BarraPestanas(vidrio: HazeState, modifier: Modifier = Modifier) {
     val oscura = Tema.esNoche || Nav.pestana != "cuaderno"
-    val fondo = if (oscura) Color(0xE6161618) else Color(0xEBE9DDC8)
+    val tinte = if (oscura) Color(0x99161618) else Color(0xA6EFE4D0)
     val activo = if (oscura) Color(0xFFECE6DA) else Color(0xFF1B1A18)
-    val inactivo = if (oscura) Color(0xFF8E8E93) else Color(0xFF8A7F6E)
+    val inactivo = if (oscura) Color(0xFF8E8E93) else Color(0xFF7D725F)
+    val forma = RoundedCornerShape(28.dp)
     Row(
-        modifier.padding(bottom = 16.dp).clip(RoundedCornerShape(28.dp)).background(fondo).padding(horizontal = 6.dp, vertical = 6.dp),
+        modifier.navigationBarsPadding().padding(bottom = 14.dp)
+            .hazeChild(vidrio, forma, HazeStyle(tint = tinte, blurRadius = 26.dp, noiseFactor = 0.08f))
+            .border(1.dp, if (oscura) Color(0x1FFFFFFF) else Color(0x14000000), forma)
+            .padding(horizontal = 6.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         listOf("cuaderno" to "Cuaderno", "cinta" to "Cinta", "oceano" to "Océano").forEach { (clave, nombre) ->
             val sel = Nav.pestana == clave
+            val fondoSel by animateColorAsState(
+                if (sel) (if (oscura) Color(0x33FFFFFF) else Color(0xCCFBF5EB)) else Color.Transparent, tween(220), label = "pestana",
+            )
             Box(
-                Modifier.clip(RoundedCornerShape(22.dp))
-                    .background(if (sel) (if (oscura) Color(0xFF2A2A2E) else Color(0xFFF8F0E3)) else Color.Transparent)
-                    .clickable { if (!sel) { Sonidos.tic(); Nav.pestana = clave } }
+                Modifier.presionable { if (!sel) { Sonidos.tic(); Nav.pestana = clave } }
+                    .clip(RoundedCornerShape(22.dp)).background(fondoSel)
                     .padding(horizontal = 18.dp, vertical = 11.dp),
                 contentAlignment = Alignment.Center,
             ) {

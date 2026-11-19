@@ -59,9 +59,9 @@ fun Cuaderno() {
 
     Box(Modifier.fillMaxSize().background(p.fondo)) {
         LazyColumn(
-            Modifier.fillMaxSize(),
+            Modifier.fillMaxSize().statusBarsPadding(),
             state = Nav.listaCuaderno,
-            contentPadding = PaddingValues(start = 26.dp, end = 26.dp, top = 14.dp, bottom = 170.dp),
+            contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 190.dp),
         ) {
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -111,7 +111,7 @@ fun Cuaderno() {
 
         Pildora(
             "Escribir",
-            Modifier.align(Alignment.BottomEnd).padding(end = 22.dp, bottom = 92.dp),
+            Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 24.dp, bottom = 92.dp),
             icono = { IconoMas(p.botonTexto) },
         ) { Nav.abrirNota(null) }
     }
@@ -198,7 +198,7 @@ fun Editor(b: Borrador) {
     }
     BackHandler(enabled = !hojaLetra && !hojaOpciones && fotoAbierta == null) { guardarYSalir() }
 
-    Box(Modifier.fillMaxSize().background(p.fondo)) {
+    Box(Modifier.fillMaxSize().background(p.fondo).systemBarsPadding().imePadding()) {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Redondo(alTocar = { guardarYSalir() }) { IconoAtras(p.texto) }
@@ -214,7 +214,7 @@ fun Editor(b: Borrador) {
                 }
             }
             Column(
-                Modifier.weight(1f).fillMaxWidth().verticalScroll(desplazamiento).padding(horizontal = 28.dp).padding(top = 18.dp, bottom = 120.dp),
+                Modifier.weight(1f).fillMaxWidth().verticalScroll(desplazamiento).padding(horizontal = 24.dp).padding(top = 18.dp, bottom = 120.dp),
             ) {
                 Escribible(
                     b.titulo, { b.titulo = it }, "Título",

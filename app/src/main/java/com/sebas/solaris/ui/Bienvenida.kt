@@ -31,11 +31,11 @@ fun Conectar() {
     var url by remember { mutableStateOf("") }
     var llave by remember { mutableStateOf("") }
     Column(
-        Modifier.fillMaxSize().background(Tema.p.fondo).verticalScroll(rememberScrollState()).padding(28.dp),
+        Modifier.fillMaxSize().background(Tema.p.fondo).systemBarsPadding().imePadding().verticalScroll(rememberScrollState()).padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Spacer(Modifier.height(40.dp))
-        TituloSerif("Conectar la estación", tam = 36)
+        TituloSerif("Conectar la estación", tam = 34)
         Parrafo("Pega los datos de tu proyecto de Supabase (Project Settings → API). Solo se pide una vez.")
         Campo(url, { url = it }, "Project URL", tipo = KeyboardType.Uri)
         Campo(llave, { llave = it }, "anon public key")
@@ -49,7 +49,8 @@ private enum class Paso { Inicio, Crear, Codigo, Entrar, Pin, ConHuella }
 fun Bienvenida(act: MainActivity) {
     var paso by remember { mutableStateOf(Paso.Inicio) }
     var codigo by remember { mutableStateOf("") }
-    Box(Modifier.fillMaxSize().background(Tema.p.fondo)) {
+    SideEffect { Nav.enPortada = paso == Paso.Inicio }
+    Box(Modifier.fillMaxSize().background(if (paso == Paso.Inicio) Color.Black else Tema.p.fondo).systemBarsPadding().imePadding()) {
         when (paso) {
             Paso.Inicio -> Inicio(alCrear = { paso = Paso.Crear }, alEntrar = { paso = Paso.Entrar })
             Paso.Crear -> Crear(alVolver = { paso = Paso.Inicio }) { c -> codigo = c; paso = Paso.Codigo }
@@ -63,16 +64,26 @@ fun Bienvenida(act: MainActivity) {
 
 @Composable
 private fun Inicio(alCrear: () -> Unit, alEntrar: () -> Unit) {
-    Column(Modifier.fillMaxSize().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Spacer(Modifier.weight(1f))
-        Text("SOLARIS", color = Tema.p.texto, fontFamily = Serif, fontSize = 52.sp, letterSpacing = 10.sp)
-        Spacer(Modifier.height(10.dp))
-        Parrafo("Una estación sobre el océano para guardar lo que piensas, sueñas y dices.", centro = true)
-        Spacer(Modifier.weight(1f))
-        Pildora("Crear mi estación", Modifier.fillMaxWidth(), alTocar = alCrear)
-        Spacer(Modifier.height(12.dp))
-        Pildora("Ya tengo una", Modifier.fillMaxWidth(), primaria = false, alTocar = alEntrar)
-        Spacer(Modifier.height(20.dp))
+    // primera vez: siempre de noche, con el logo fundido en el negro
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Spacer(Modifier.weight(1f))
+            androidx.compose.foundation.Image(
+                androidx.compose.ui.res.painterResource(com.sebas.solaris.R.drawable.logo),
+                contentDescription = "Solaris",
+                contentScale = androidx.compose.ui.layout.ContentScale.FillWidth,
+                modifier = Modifier.fillMaxWidth().requiredWidth(androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp * 1.15f),
+            )
+            Spacer(Modifier.height(4.dp))
+            Text("Una estación sobre el océano para guardar lo que piensas, sueñas y dices.",
+                color = Color(0xFFB9C3C8), fontFamily = Sans, fontSize = 15.sp, lineHeight = 22.sp,
+                textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 12.dp))
+            Spacer(Modifier.weight(1.3f))
+            Pildora("Crear mi estación", Modifier.fillMaxWidth(), fondo = Color(0xFFEFE3CB), tinta = Color.Black, alTocar = alCrear)
+            Spacer(Modifier.height(12.dp))
+            Pildora("Ya tengo una", Modifier.fillMaxWidth(), primaria = false, fondo = Color(0x1FFFFFFF), tinta = Color(0xFFEFE3CB), alTocar = alEntrar)
+            Spacer(Modifier.height(8.dp))
+        }
     }
 }
 
@@ -98,9 +109,9 @@ private fun Crear(alVolver: () -> Unit, alTerminar: (String) -> Unit) {
         else -> null
     }
     val listo = email.contains("@") && clave.length >= 6 && frase.trim().length >= 12 && frase == frase2 && frase != clave
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(26.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Redondo(alTocar = alVolver) { IconoAtras(Tema.p.texto) }
-        TituloSerif("Construir la estación", tam = 36)
+        TituloSerif("Construir la estación", tam = 34)
         Parrafo("Dos secretos distintos la cuidan. La contraseña abre la puerta de Supabase. La frase llave cifra todo y nunca sale de tu celular: nadie más puede leer lo que guardas.")
         Campo(email, { email = it.trim() }, "Correo", tipo = KeyboardType.Email)
         Campo(clave, { clave = it }, "Contraseña de la cuenta", secreto = true)
@@ -123,7 +134,7 @@ private fun Crear(alVolver: () -> Unit, alTerminar: (String) -> Unit) {
 private fun Codigo(codigo: String, alSeguir: () -> Unit) {
     var anotado by remember { mutableStateOf(false) }
     val p = Tema.p
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(26.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
         Spacer(Modifier.height(30.dp))
         TituloSerif("Tu código de recuperación", tam = 34)
         Parrafo("Si algún día olvidas la frase llave, este código es la única otra forma de entrar. Anótalo en papel y guárdalo. No se volverá a mostrar.")
@@ -156,9 +167,9 @@ private fun Entrar(alVolver: () -> Unit, alTerminar: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     var trabajando by remember { mutableStateOf(false) }
     val listo = email.contains("@") && clave.isNotEmpty() && secreto.isNotBlank() && (!conCodigo || fraseNueva.trim().length >= 12)
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(26.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Redondo(alTocar = alVolver) { IconoAtras(Tema.p.texto) }
-        TituloSerif("Volver a la estación", tam = 36)
+        TituloSerif("Volver a la estación", tam = 34)
         Parrafo("Todo lo que guardaste en la nube vuelve a este celular. Las cintas de audio no viajan: se quedan en el celular donde las grabaste.")
         Campo(email, { email = it.trim() }, "Correo", tipo = KeyboardType.Email)
         Campo(clave, { clave = it }, "Contraseña de la cuenta", secreto = true)
@@ -192,9 +203,9 @@ fun PinNuevo(alTerminar: () -> Unit) {
     var pin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     val p = Tema.p
-    Column(Modifier.fillMaxSize().padding(26.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.weight(0.4f))
-        TituloSerif(if (primero == null) "Tu PIN de cada día" else "Repítelo", tam = 32)
+        TituloSerif(if (primero == null) "Tu PIN de cada día" else "Repítelo", tam = 34)
         Spacer(Modifier.height(8.dp))
         Parrafo("Con él o con tu huella entras a la estación. La frase llave queda para emergencias.", centro = true)
         Spacer(Modifier.height(16.dp))
@@ -237,7 +248,7 @@ fun PinNuevo(alTerminar: () -> Unit) {
 
 @Composable
 private fun PreguntaHuella(alElegir: (Boolean) -> Unit) {
-    Column(Modifier.fillMaxSize().padding(26.dp), verticalArrangement = Arrangement.Center) {
+    Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
         TituloSerif("¿Entrar también con tu huella?", tam = 34)
         Spacer(Modifier.height(12.dp))
         Parrafo("Es más rápido. El PIN sigue funcionando siempre.")
