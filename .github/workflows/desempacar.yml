@@ -1,0 +1,34 @@
+name: Desempacar entrega
+
+# Claude sube los cambios como un solo archivo (entrega.tar.gz).
+# Este flujo lo abre, guarda los archivos en el repositorio y lanza la compilación.
+on:
+  push:
+    branches: [main]
+    paths: ['entrega.tar.gz']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  desempacar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Desempacar y guardar
+        run: |
+          tar xzf entrega.tar.gz --exclude='.github/*'
+          git rm -q entrega.tar.gz
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Entrega de Claude" || echo "Sin cambios"
+          git push
+
+      - name: Compilar la APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run build.yml --ref main --repo ${{ github.repository }}
