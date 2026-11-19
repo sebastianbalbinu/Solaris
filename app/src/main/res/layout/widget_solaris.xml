@@ -1,0 +1,32 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_fondo"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:padding="8dp">
+
+    <TextView
+        android:id="@+id/widget_escribir"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:layout_marginEnd="4dp"
+        android:background="@drawable/widget_boton"
+        android:gravity="center"
+        android:text="Escribir"
+        android:textColor="#ECE6DA"
+        android:textSize="15sp" />
+
+    <TextView
+        android:id="@+id/widget_grabar"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:layout_marginStart="4dp"
+        android:background="@drawable/widget_boton"
+        android:gravity="center"
+        android:text="● Grabar"
+        android:textColor="#E0745F"
+        android:textSize="15sp" />
+</LinearLayout>

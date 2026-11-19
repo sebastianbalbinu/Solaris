@@ -32,6 +32,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -50,20 +51,39 @@ fun formato(patron: String, cuando: Long): String = SimpleDateFormat(patron, ES)
 @Composable
 fun Cuaderno() {
     val p = Tema.p
-    val notas = Casa.notas()
+    var buscando by remember { mutableStateOf(false) }
+    var busqueda by remember { mutableStateOf("") }
+    val todas = Casa.notas()
+    val notas = if (buscando && busqueda.isNotBlank()) todas.filter { (it.title + " " + it.text).contains(busqueda.trim(), ignoreCase = true) } else todas
     val (a, b) = Tema.saludo()
 
     Box(Modifier.fillMaxSize().background(p.fondo)) {
         LazyColumn(
             Modifier.fillMaxSize(),
+            state = Nav.listaCuaderno,
             contentPadding = PaddingValues(start = 26.dp, end = 26.dp, top = 14.dp, bottom = 170.dp),
         ) {
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Senal(formato("EEEE d 'de' MMMM", System.currentTimeMillis()), Modifier.weight(1f))
+                    Redondo(alTocar = { buscando = !buscando; busqueda = "" }) { IconoLupa(p.texto) }
+                    Spacer(Modifier.width(10.dp))
                     BotonModo()
                     Spacer(Modifier.width(10.dp))
                     Redondo(alTocar = { Nav.ajustes = true }) { IconoPuntos(p.texto) }
+                }
+            }
+            if (buscando) {
+                item {
+                    BasicTextField(
+                        value = busqueda,
+                        onValueChange = { busqueda = it },
+                        singleLine = true,
+                        textStyle = TextStyle(color = p.texto, fontFamily = Sans, fontSize = 17.sp),
+                        cursorBrush = SolidColor(p.acento),
+                        modifier = Modifier.fillMaxWidth().padding(top = 18.dp).clip(RoundedCornerShape(14.dp)).background(p.superficie).padding(horizontal = 16.dp, vertical = 13.dp),
+                        decorationBox = { campo -> Box { if (busqueda.isEmpty()) Text("Buscar en el cuaderno", color = p.texto2, fontFamily = Sans, fontSize = 17.sp); campo() } },
+                    )
                 }
             }
             item {
@@ -100,8 +120,8 @@ fun Cuaderno() {
 @Composable
 private fun FilaNota(n: Item, alTocar: () -> Unit) {
     val p = Tema.p
-    val cabeza = n.title.ifBlank { n.text.lineSequence().firstOrNull { it.isNotBlank() } ?: "Fotos" }
-    val resto = if (n.title.isBlank()) n.text.lineSequence().filter { it.isNotBlank() }.drop(1).joinToString(" ") else n.text.replace('\n', ' ')
+    val cabeza = n.title.ifBlank { sinMarcas(n.text.lineSequence().firstOrNull { it.isNotBlank() } ?: "Fotos") }
+    val resto = sinMarcas(if (n.title.isBlank()) n.text.lineSequence().filter { it.isNotBlank() }.drop(1).joinToString("\n") else n.text)
     Column(Modifier.fillMaxWidth().clickable(onClick = alTocar)) {
         Row(Modifier.padding(vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -141,14 +161,23 @@ fun Editor(b: Borrador) {
     var hojaOpciones by remember { mutableStateOf(false) }
     var fotoAbierta by remember { mutableStateOf<String?>(null) }
 
+    var cuerpo by remember(b) { mutableStateOf(TextFieldValue(b.texto)) }
     LaunchedEffect(b) {
         if (!b.cargado) {
             b.id?.let { Casa.porId(it) }?.let { e ->
                 b.titulo = e.title; b.texto = e.text; b.fotos = e.photos; b.creado = e.created
             }
             b.cargado = true
+            cuerpo = TextFieldValue(b.texto)
         }
     }
+    // autoguardado: unos segundos después de dejar de escribir
+    LaunchedEffect(b.titulo, b.texto, b.fotos) {
+        delay(2500)
+        if (b.cargado && !b.vacio()) Casa.guardarBorrador(b)
+    }
+    val desplazamiento = rememberScrollState(b.desplazamiento)
+    DisposableEffect(b) { onDispose { b.desplazamiento = desplazamiento.value } }
 
     val elegir = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(8)) { uris ->
         Casa.pausarCandado = false
@@ -185,7 +214,7 @@ fun Editor(b: Borrador) {
                 }
             }
             Column(
-                Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 28.dp).padding(top = 18.dp, bottom = 120.dp),
+                Modifier.weight(1f).fillMaxWidth().verticalScroll(desplazamiento).padding(horizontal = 28.dp).padding(top = 18.dp, bottom = 120.dp),
             ) {
                 Escribible(
                     b.titulo, { b.titulo = it }, "Título",
@@ -201,11 +230,22 @@ fun Editor(b: Borrador) {
                 }
                 Spacer(Modifier.height(18.dp))
                 val tam = Tema.tamanoLetra
-                Escribible(
-                    b.texto, { b.texto = it }, "Escribe aquí…",
-                    TextStyle(color = Tema.colorLetra, fontFamily = Sans, fontSize = tam.sp, lineHeight = (tam * 1.62f).sp),
-                    unaLinea = false,
-                    modifier = Modifier.defaultMinSize(minHeight = 360.dp),
+                val estilo = TextStyle(color = Tema.colorLetra, fontFamily = Sans, fontSize = tam.sp, lineHeight = (tam * 1.62f).sp)
+                val formatoTexto = remember(Tema.esNoche) { FormatoSencillo(p.texto2.copy(alpha = 0.45f), p.acento, p.texto2) }
+                BasicTextField(
+                    value = cuerpo,
+                    onValueChange = { nuevo -> val v = continuarLista(cuerpo, nuevo); cuerpo = v; b.texto = v.text },
+                    textStyle = estilo,
+                    cursorBrush = SolidColor(p.acento),
+                    visualTransformation = formatoTexto,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                    modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 360.dp),
+                    decorationBox = { campo ->
+                        Box {
+                            if (cuerpo.text.isEmpty()) Text("Escribe aquí…", style = estilo.copy(color = p.texto2.copy(alpha = 0.5f)))
+                            campo()
+                        }
+                    },
                 )
             }
         }
@@ -214,7 +254,21 @@ fun Editor(b: Borrador) {
             Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Pildora("Foto", primaria = false, icono = { IconoFoto(p.texto) }) { pedirFoto() }
+            Row(
+                Modifier.height(50.dp).clip(CircleShape).background(p.superficie).padding(horizontal = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                BotonFormato({ Text("B", color = p.texto, fontFamily = Sans, fontWeight = FontWeight.SemiBold, fontSize = 17.sp) }) {
+                    cuerpo = conNegrita(cuerpo); b.texto = cuerpo.text
+                }
+                BotonFormato({ Text("•", color = p.texto, fontFamily = Sans, fontSize = 22.sp) }) {
+                    cuerpo = alternarPrefijo(cuerpo, "- "); b.texto = cuerpo.text
+                }
+                BotonFormato({ Text("❝", color = p.texto, fontFamily = Sans, fontSize = 18.sp) }) {
+                    cuerpo = alternarPrefijo(cuerpo, "> "); b.texto = cuerpo.text
+                }
+                BotonFormato({ IconoFoto(p.texto) }) { pedirFoto() }
+            }
             Pildora("Listo") { guardarYSalir() }
         }
 
@@ -327,4 +381,12 @@ private fun Escribible(
             }
         },
     )
+}
+
+@Composable
+private fun BotonFormato(contenido: @Composable () -> Unit, alTocar: () -> Unit) {
+    Box(
+        Modifier.size(42.dp).clip(CircleShape).clickable { com.sebas.solaris.Sonidos.tic(); alTocar() },
+        contentAlignment = Alignment.Center,
+    ) { contenido() }
 }

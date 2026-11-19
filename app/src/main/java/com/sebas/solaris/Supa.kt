@@ -148,6 +148,23 @@ class Supa(
         }
     }
 
+    // ---------- transcripción (función de Supabase que llama a Whisper) ----------
+
+    fun transcribir(wav: ByteArray): String {
+        val req = conPermiso("$base/functions/v1/transcribir")
+            .post(wav.toRequestBody("audio/wav".toMediaType()))
+            .build()
+        http.newCall(req).execute().use { r ->
+            val cuerpo = r.body?.string() ?: ""
+            if (r.code == 404) throw Problema("Falta instalar la función de transcripción en Supabase.")
+            if (!r.isSuccessful) {
+                val msg = try { JSONObject(cuerpo).let { o -> o.optJSONObject("error")?.optString("message") ?: o.optString("error") } } catch (e: Exception) { cuerpo.take(140) }
+                throw Problema(if (msg.contains("GROQ_API_KEY")) "Falta la llave de transcripción en Supabase." else "La transcripción falló: $msg")
+            }
+            return JSONObject(cuerpo).optString("text").trim()
+        }
+    }
+
     // ---------- red ----------
 
     private fun texto(req: Request): String {

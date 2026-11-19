@@ -60,6 +60,10 @@ fun Oceano() {
     LaunchedEffect(Unit) {
         while (isActive) { Clima.actualizar(); delay(15 * 60 * 1000L) }
     }
+    val intensidad = ((mar.ola / 8.0 + mar.viento / 50.0) / 2.0).coerceIn(0.0, 1.0).toFloat()
+    LaunchedEffect(Tema.sonidoMar, intensidad) { Sonidos.mar(Tema.sonidoMar, intensidad) }
+    DisposableEffect(Unit) { onDispose { Sonidos.mar(false, 0f) } }
+    val recuerdo = remember { Casa.recuerdoDeHoy() }
 
     val resultados: List<Item> = remember(mostrada, Casa.items) { if (mostrada.isBlank()) emptyList() else Casa.buscar(mostrada) }
     val temas = remember(verTemas, Casa.items) { if (verTemas) Casa.temas() else emptyList() }
@@ -84,6 +88,15 @@ fun Oceano() {
             Senal("Ola ${uno(mar.ola)} m · ${mar.periodo.toInt()} s · viento ${mar.viento.toInt()} nudos", color = Tenue)
             Senal("Nubes ${mar.nubes.toInt()}% · visibilidad ${uno(mar.visibilidad)} km", color = Tenue)
             Senal(if (mar.real) "Lectura real · " + formato("HH:mm", mar.cuando) else "Esperando la primera lectura del mar…", color = Tenue)
+            Row(
+                Modifier.padding(top = 10.dp).clip(RoundedCornerShape(14.dp)).background(Color(0x26E4F1F3))
+                    .clickable { Sonidos.tic(); Tema.alternarSonidoMar() }.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconoParlante(Claro, Tema.sonidoMar, 16.dp)
+                Spacer(Modifier.width(8.dp))
+                Senal(if (Tema.sonidoMar) "Rumor del mar" else "Mar en silencio", color = Claro)
+            }
         }
 
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
@@ -110,6 +123,9 @@ fun Oceano() {
                     LazyColumn(Modifier.heightIn(max = 240.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(resultados, key = { it.id }) { r -> Resultado(r, mostrada) }
                     }
+                } else if (recuerdo != null) {
+                    Linea("el océano te devuelve algo, " + hace(recuerdo.created) + ":", Tenue)
+                    Resultado(recuerdo, "")
                 } else {
                     Linea("pregúntale al océano por una palabra, un día o un #tema.", Tenue)
                 }
@@ -185,4 +201,14 @@ private fun fragmento(texto: String, q: String): String {
 fun duracion(ms: Long): String {
     val s = ms / 1000
     return String.format(Locale.US, "%02d:%02d", s / 60, s % 60)
+}
+
+private fun hace(t: Long): String {
+    val dias = ((System.currentTimeMillis() - t) / 86_400_000L).toInt()
+    return when {
+        dias >= 730 -> "de hace ${dias / 365} años"
+        dias >= 360 -> "de hace un año"
+        dias >= 60 -> "de hace ${dias / 30} meses"
+        else -> "de hace $dias días"
+    }
 }

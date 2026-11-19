@@ -1,5 +1,6 @@
 package com.sebas.solaris
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.compose.setContent
@@ -7,6 +8,7 @@ import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import com.sebas.solaris.ui.Nav
 import com.sebas.solaris.ui.Solaris
 import com.sebas.solaris.ui.Tema
 
@@ -19,20 +21,29 @@ class MainActivity : FragmentActivity() {
         Tema.iniciar(this)
         Clima.iniciar(this)
         Sonidos.iniciar(this)
+        recibir(intent)
         setContent { Solaris(this) }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        recibir(intent)
+    }
+
+    /** Lo que pide el widget: se cumple apenas se entra a la estación. */
+    private fun recibir(intent: Intent?) {
+        when (intent?.action) {
+            Widget.ESCRIBIR -> Nav.pendiente = "escribir"
+            Widget.GRABAR -> Nav.pendiente = "grabar"
+        }
     }
 
     override fun onStop() {
         super.onStop()
         if (isChangingConfigurations) return
-        // Si se sale grabando, la cinta se guarda tal como va.
-        if (Grabadora.grabando) {
-            val id = Grabadora.idActual
-            val inicio = Grabadora.inicioGrabacion
-            val dur = Grabadora.detenerGrabacion()
-            if (id != null && dur > 500) Casa.nuevaCinta(id, "registro sin nombre", dur, inicio)
-        }
+        // La grabación sigue sola (con su notificación); la reproducción se detiene.
         Grabadora.detenerReproduccion()
+        Sonidos.mar(false, 0f)
         // Apenas sales de la app, la estación se cierra.
         if (!Casa.pausarCandado) Casa.cerrar()
     }

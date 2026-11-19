@@ -29,7 +29,11 @@ import kotlin.math.max
 import kotlin.math.min
 
 /** Lo que se está escribiendo. Vive en memoria para no perderse si el telón se cierra a mitad. */
-class Borrador(val id: String?, cuarto: String?, val abrirFoto: Boolean = false) {
+class Borrador(id: String?, cuarto: String?, val abrirFoto: Boolean = false) {
+    /** Se asigna al primer guardado, para que el autoguardado no cree copias. */
+    var id: String? = id
+    /** Dónde ibas leyendo o escribiendo. */
+    var desplazamiento = 0
     var titulo by mutableStateOf("")
     var texto by mutableStateOf("")
     var cuarto by mutableStateOf(cuarto)
@@ -342,9 +346,10 @@ object Casa {
         ) return
         val ahora = System.currentTimeMillis()
         previo?.photos?.filter { it !in b.fotos }?.let { olvidarFotos(it) }
+        val idNota = b.id ?: Item.nuevoId().also { b.id = it }
         guardar(
             Item(
-                id = b.id ?: Item.nuevoId(),
+                id = idNota,
                 kind = "entrada",
                 room = b.cuarto,
                 title = b.titulo.trim(),
@@ -368,7 +373,8 @@ object Casa {
 
     /** Si se sale sin escribir nada, las fotos recién agregadas no se quedan huérfanas. */
     fun descartarNuevas(b: Borrador) {
-        olvidarFotos(b.fotosNuevas.filter { id -> b.id == null || porId(b.id)?.photos?.contains(id) != true })
+        val bid = b.id
+        olvidarFotos(b.fotosNuevas.filter { id -> bid == null || porId(bid)?.photos?.contains(id) != true })
     }
 
     private fun olvidarFotos(ids: List<String>) {
@@ -451,6 +457,58 @@ object Casa {
         val r = Regex("#[\\p{L}0-9_]+")
         return notas().flatMap { n -> r.findAll(n.text + " " + n.title).map { it.value.lowercase() }.toSet() }
             .groupingBy { it }.eachCount().toList().sortedByDescending { it.second }
+    }
+
+
+    // ---------------- cintas pendientes, transcripción y recuerdos ----------------
+
+    /** Una cinta que terminó con la estación cerrada (por ejemplo desde la notificación). */
+    @Synchronized
+    fun dejarCintaPendiente(id: String, duracion: Long, creada: Long) {
+        val arr = JSONArray(prefs.getString("cintas_pendientes", "[]"))
+        arr.put(JSONObject().put("id", id).put("dur", duracion).put("creada", creada))
+        prefs.edit().putString("cintas_pendientes", arr.toString()).apply()
+    }
+
+    @Synchronized
+    fun cintasPendientes(): List<Triple<String, Long, Long>> {
+        val arr = JSONArray(prefs.getString("cintas_pendientes", "[]"))
+        return (0 until arr.length()).map { val o = arr.getJSONObject(it); Triple(o.getString("id"), o.getLong("dur"), o.getLong("creada")) }
+    }
+
+    @Synchronized
+    fun quitarPendiente(id: String) {
+        val arr = JSONArray(prefs.getString("cintas_pendientes", "[]"))
+        val nuevo = JSONArray()
+        for (i in 0 until arr.length()) if (arr.getJSONObject(i).getString("id") != id) nuevo.put(arr.getJSONObject(i))
+        prefs.edit().putString("cintas_pendientes", nuevo.toString()).apply()
+    }
+
+    fun transcribirAudio(wav: ByteArray): String {
+        val s = supa ?: throw Problema("Primero conecta Supabase.")
+        return s.transcribir(wav)
+    }
+
+    fun ponerTranscripcion(id: String, texto: String) {
+        val c = porId(id) ?: return
+        guardar(c.copy(text = texto, updated = System.currentTimeMillis()))
+    }
+
+    /** Una vez al día, el océano devuelve algo: lo de hace un año, o un recuerdo viejo al azar. */
+    fun recuerdoDeHoy(): Item? {
+        val hoy = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(java.util.Date())
+        if (prefs.getString("recuerdo_dia", "") == hoy) return null
+        val ahora = Calendar.getInstance()
+        val todo = items.filter { (it.esEntrada || it.esCinta) && !it.deleted }
+        val mismoDia = todo.filter {
+            val c = Calendar.getInstance().apply { timeInMillis = it.created }
+            c.get(Calendar.YEAR) < ahora.get(Calendar.YEAR) && c.get(Calendar.MONTH) == ahora.get(Calendar.MONTH) &&
+                c.get(Calendar.DAY_OF_MONTH) == ahora.get(Calendar.DAY_OF_MONTH)
+        }
+        val viejos = todo.filter { System.currentTimeMillis() - it.created > 30L * 24 * 3600 * 1000 }
+        val elegido = mismoDia.randomOrNull() ?: viejos.randomOrNull() ?: return null
+        prefs.edit().putString("recuerdo_dia", hoy).apply()
+        return elegido
     }
 
     // ---------------- fotos ----------------

@@ -1,37 +1,18 @@
-# Logia
+# Solaris
 
-*Lo que no quieres perder entre el sueño y la vigilia.*
+Una estación sobre el océano para guardar lo que piensas, sueñas y dices.
 
-Una bitácora íntima con la estética de la Sala Roja: páginas con texto y fotos, habitaciones, un tomo que se llena cada mes, velas por cada día que entras y un modo para quemar lo que solo necesitabas soltar.
+- **Cuaderno:** notas editoriales con fotos, **negrita**, listas y citas. Día en papel crema, noche en negro absoluto (OLED).
+- **Cinta:** grabadora de casete en WAV 48 kHz, que sigue grabando con la pantalla apagada y transcribe la voz con Whisper.
+- **Océano:** el mar del Paso de Drake en pixel art, con datos reales de Open-Meteo, y una terminal para buscar todo.
 
 ## Privacidad
 
-- Todo se cifra **en el celular** (AES-256-GCM) con una llave maestra.
-- La llave maestra solo sale envuelta con tu **frase llave** y con tu **código de recuperación**. Supabase guarda datos ilegibles.
-- PIN o huella para el día a día; el telón se cierra apenas sales de la app.
-- No se pueden tomar capturas y la app no aparece en "recientes".
+Notas y fotos se cifran en el celular (AES-256-GCM) antes de subir a Supabase. Los audios no salen del celular;
+para transcribir, cada parte viaja una vez (a 16 kHz) a la función `transcribir`, que la pasa a Whisper y no la guarda.
 
-## Preparar Supabase (una sola vez)
+## Supabase
 
-1. Crea un proyecto gratis en [supabase.com](https://supabase.com).
-2. **Authentication → Sign In / Providers → Email**: apaga **Confirm email**.
-3. **SQL Editor → New query**: pega todo `supabase/esquema.sql` y dale **Run**.
-4. **Project Settings → API**: copia el **Project URL** y la **anon public key**.
-5. En GitHub, en este repositorio: **Settings → Secrets and variables → Actions → New repository secret**:
-   - `SUPABASE_URL` = el Project URL
-   - `SUPABASE_ANON_KEY` = la anon key
-
-   (Si no pones los secretos, la app te los pide la primera vez que la abres.)
-6. Cuando ya hayas creado tu casa desde la app, puedes apagar **Allow new users to sign up** en Authentication para que nadie más cree cuentas en tu proyecto.
-
-## Compilar
-
-Cada cambio en `main` compila la APK con GitHub Actions y la publica en **Releases** como `Logia.apk`. Si falla, el registro queda en un release llamado "Registro de error".
-
-## Fases
-
-1. **La casa** ← esta versión: telón, cifrado, Supabase, páginas con texto y fotos, habitaciones, quemar, tomo y velas.
-2. La grabadora: audios de voz y sonido de campo.
-3. El libro: tomos encuadernados en el estante, sala que se amuebla, páginas de personas y lugares.
-4. Transcripción de audios y buscador.
-5. Editor de cinta.
+1. `supabase/esquema.sql` en el SQL Editor.
+2. Edge Function `transcribir` con el código de `supabase/functions/transcribir/index.ts`.
+3. Secreto `GROQ_API_KEY` (Edge Functions → Secrets) con una llave de console.groq.com.

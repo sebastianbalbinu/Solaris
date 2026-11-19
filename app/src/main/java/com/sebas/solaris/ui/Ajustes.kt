@@ -23,7 +23,11 @@ import androidx.fragment.app.FragmentActivity
 import com.sebas.solaris.BuildConfig
 import com.sebas.solaris.Casa
 import com.sebas.solaris.Huella
+import com.sebas.solaris.Exportador
 import com.sebas.solaris.Sonidos
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import kotlinx.coroutines.launch
 
 @Composable
 fun Ajustes() {
@@ -34,6 +38,13 @@ fun Ajustes() {
     var letra by remember { mutableStateOf(false) }
     val hayHuella = remember { act != null && Huella.disponible(act) }
     val pendientes = Casa.pendientes()
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var aviso by remember { mutableStateOf<String?>(null) }
+    val carpeta = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        Casa.pausarCandado = false
+        if (uri != null) scope.launch { aviso = "Exportando…"; aviso = Exportador.exportar(ctx, uri) }
+    }
     BackHandler(enabled = !salir && !letra) { Nav.ajustes = false }
 
     Box(Modifier.fillMaxSize().background(p.fondo)) {
@@ -57,6 +68,11 @@ fun Ajustes() {
                 FilaAccion("Letra y modo") { letra = true }
                 Fila("Modo", when (Tema.modo) { "dia" -> "Día"; "noche" -> "Noche"; else -> "Según la hora" })
             }
+            Grupo("Cintas") {
+                FilaAccion("Exportar todas a una carpeta") { Casa.pausarCandado = true; carpeta.launch(null) }
+                if (aviso != null) Parrafo(aviso ?: "", Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
+                FilaAccion(if (Tema.sonidoMar) "Silenciar el rumor del mar" else "Activar el rumor del mar") { Tema.alternarSonidoMar() }
+            }
             Grupo("Entrada") {
                 if (hayHuella) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -74,7 +90,8 @@ fun Ajustes() {
             Grupo("Cómo se cuida") {
                 Parrafo(
                     "Notas y fotos se cifran en este celular con tu frase llave antes de subir: en la nube solo hay datos ilegibles. " +
-                        "Las cintas de audio nunca salen de este celular; a la nube sube solo su nombre. " +
+                        "Las cintas de audio se quedan en este celular; a la nube suben su nombre y su transcripción. " +
+                        "Para transcribir, el audio viaja una vez (reducido a 16 kHz) a Whisper por medio de tu Supabase, y no se guarda allá. " +
                         "El océano lee el mar real del Paso de Drake cada hora en Open-Meteo.",
                     Modifier.padding(16.dp),
                 )

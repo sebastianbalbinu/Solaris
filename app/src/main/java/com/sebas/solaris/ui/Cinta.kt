@@ -42,9 +42,13 @@ import com.sebas.solaris.Clima
 import com.sebas.solaris.Grabadora
 import com.sebas.solaris.Item
 import com.sebas.solaris.R
+import com.sebas.solaris.Exportador
+import com.sebas.solaris.ServicioGrabacion
 import com.sebas.solaris.Sonidos
+import com.sebas.solaris.Transcriptor
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 private const val ANCHO = 370f
 private const val ALTO = 748f
@@ -54,6 +58,7 @@ private const val ALTO = 748f
 @Composable
 fun Cinta() {
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
     val cintas = Casa.cintas()
     // 0 = cinta nueva; 1..n = cintas guardadas, de la más nueva a la más vieja
     var posicion by remember { mutableIntStateOf(0) }
@@ -74,26 +79,45 @@ fun Cinta() {
     val actual: Item? = if (posicion == 0) null else cintas.getOrNull(posicion - 1)
     val numeroNueva = cintas.size + 1
 
+    // cintas que terminaron con la estación cerrada (desde la notificación): se nombran al volver
+    LaunchedEffect(Unit) {
+        if (!Grabadora.grabando && nombrar == null) Casa.cintasPendientes().firstOrNull()?.let { nombrar = it }
+    }
+
     fun empezarGrabacion() {
         val id = Item.nuevoId()
         if (!Grabadora.grabar(id, Casa.archivoCinta(id))) aviso = "No se pudo usar el micrófono."
+        else ServicioGrabacion.iniciar(ctx)
     }
-    val permiso = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
-        if (ok) empezarGrabacion() else aviso = "Solaris necesita el micrófono para grabar."
+    val permisos = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { r ->
+        if (r[Manifest.permission.RECORD_AUDIO] == true) empezarGrabacion() else aviso = "Solaris necesita el micrófono para grabar."
+    }
+    val carpeta = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        Casa.pausarCandado = false
+        if (uri != null) scope.launch { aviso = "Exportando…"; aviso = Exportador.exportar(ctx, uri) }
+    }
+
+    fun transcribir(id: String) {
+        Transcriptor.lanzar(id) { aviso = it }
     }
 
     fun rec() {
         if (Grabadora.grabando) return
         Grabadora.detenerReproduccion()
         posicion = 0
-        if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) empezarGrabacion()
-        else permiso.launch(Manifest.permission.RECORD_AUDIO)
+        val faltan = mutableListOf<String>()
+        if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) faltan += Manifest.permission.RECORD_AUDIO
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) faltan += Manifest.permission.POST_NOTIFICATIONS
+        if (faltan.isEmpty()) empezarGrabacion() else permisos.launch(faltan.toTypedArray())
     }
     fun stop() {
         if (Grabadora.grabando) {
             val id = Grabadora.idActual
             val inicio = Grabadora.inicioGrabacion
             val dur = Grabadora.detenerGrabacion()
+            ServicioGrabacion.terminar(ctx)
             if (id != null) {
                 if (dur < 600) Casa.archivoCinta(id).delete()
                 else nombrar = Triple(id, dur, inicio)
@@ -138,9 +162,15 @@ fun Cinta() {
             Box(Modifier.size(ancho, d(ALTO))) {
                 Image(painterResource(R.drawable.grabadora), "Grabadora de casete", Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
 
-                // carretes
-                Carrete(d(138f), d(463f), d(17f), if (girando) giro else 0f)
-                Carrete(d(232f), d(463f), d(17f), if (girando) giro * 1.3f else 0f)
+                // carretes: la cinta pasa del izquierdo al derecho
+                val avance = when {
+                    Grabadora.grabando -> (Grabadora.posicion / (30 * 60_000f)).coerceIn(0f, 0.95f)
+                    actual != null && Grabadora.idActual == actual.id && actual.dur > 0 && (Grabadora.reproduciendo || Grabadora.pausado) ->
+                        (Grabadora.posicion.toFloat() / actual.dur).coerceIn(0f, 1f)
+                    else -> 0f
+                }
+                Carrete(d(138f), d(463f), d(17f), d(17f + 9f * (1 - avance)), if (girando) giro else 0f)
+                Carrete(d(232f), d(463f), d(17f), d(17f + 9f * avance), if (girando) giro * 1.3f else 0f)
 
                 // la etiqueta del casete
                 val tinta = Color(0xFF2C2418)
@@ -165,7 +195,8 @@ fun Cinta() {
                 Text("WAV · 48 kHz · EN ESTE CELULAR", color = tinta2, fontFamily = Mono, fontSize = (7 * u).sp, modifier = Modifier.offset(d(176f), d(507f)))
                 val pie = when {
                     Grabadora.grabando && Grabadora.pausado -> "en pausa…"
-                    Grabadora.grabando -> "grabando…"
+                    Grabadora.grabando -> "grabando… (sigue aunque apagues la pantalla)"
+                    actual != null && actual.id in Transcriptor.enCurso -> "transcribiendo tu voz…"
                     actual == null -> "REC para grabar · ◀◀ ▶▶ para cambiar de cinta"
                     actual.text.isNotBlank() -> "“" + actual.text.take(60) + "…”"
                     else -> "${posicion} de ${cintas.size} · mantén presionado para renombrar"
@@ -211,8 +242,15 @@ fun Cinta() {
             )
         }
 
-        NombrarCinta(nombrar, numeroNueva) { nombrar = null }
-        OpcionesCinta(opciones) { opciones = null }
+        NombrarCinta(nombrar, numeroNueva) { id ->
+            nombrar = null
+            if (id != null) { Casa.quitarPendiente(id); transcribir(id) }
+        }
+        OpcionesCinta(
+            opciones,
+            alTranscribir = { id -> transcribir(id) },
+            alExportar = { Casa.pausarCandado = true; carpeta.launch(null) },
+        ) { opciones = null }
     }
 }
 
@@ -222,7 +260,10 @@ private fun reloj(ms: Long): String {
 }
 
 @Composable
-private fun Carrete(x: Dp, y: Dp, r: Dp, angulo: Float) {
+private fun Carrete(x: Dp, y: Dp, r: Dp, rollo: Dp, angulo: Float) {
+    Canvas(Modifier.offset(x - rollo, y - rollo).size(rollo * 2)) {
+        drawCircle(Color(0xFF3B2C1E), size.minDimension / 2)
+    }
     Canvas(Modifier.offset(x - r, y - r).size(r * 2).rotate(angulo)) {
         val c = Offset(size.width / 2, size.height / 2)
         val rad = size.minDimension / 2
@@ -254,12 +295,12 @@ private fun Tecla(x: Dp, y: Dp, w: Dp, h: Dp, hundida: Boolean, alTocar: () -> U
 }
 
 @Composable
-private fun NombrarCinta(dato: Triple<String, Long, Long>?, numero: Int, alCerrar: () -> Unit) {
+private fun NombrarCinta(dato: Triple<String, Long, Long>?, numero: Int, alCerrar: (String?) -> Unit) {
     var nombre by remember(dato) { mutableStateOf("registro %03d".format(numero)) }
     val guardar = {
         val d = dato
         if (d != null) Casa.nuevaCinta(d.first, nombre.trim().ifBlank { "registro %03d".format(numero) }, d.second, d.third)
-        alCerrar()
+        alCerrar(d?.first)
     }
     Hoja(dato != null, { guardar() }) {
         Text("¿Cómo se llama esta cinta?", color = Tema.p.texto, fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 17.sp)
@@ -270,13 +311,17 @@ private fun NombrarCinta(dato: Triple<String, Long, Long>?, numero: Int, alCerra
 }
 
 @Composable
-private fun OpcionesCinta(c: Item?, alCerrar: () -> Unit) {
+private fun OpcionesCinta(c: Item?, alTranscribir: (String) -> Unit, alExportar: () -> Unit, alCerrar: () -> Unit) {
     var nombre by remember(c) { mutableStateOf(c?.title ?: "") }
     var confirmar by remember(c) { mutableStateOf(false) }
     Hoja(c != null, alCerrar) {
         Text("Esta cinta", color = Tema.p.texto, fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 17.sp)
         Campo(nombre, { nombre = it }, "Nombre")
         Pildora("Guardar nombre", Modifier.fillMaxWidth(), habilitada = nombre.isNotBlank()) { c?.let { Casa.renombrarCinta(it.id, nombre) }; alCerrar() }
+        Pildora(if (c?.text.isNullOrBlank()) "Transcribir mi voz" else "Transcribir de nuevo", Modifier.fillMaxWidth(), primaria = false) {
+            c?.let { alTranscribir(it.id) }; alCerrar()
+        }
+        Pildora("Exportar todas las cintas a una carpeta", Modifier.fillMaxWidth(), primaria = false) { alCerrar(); alExportar() }
         if (!confirmar) Pildora("Borrar cinta", Modifier.fillMaxWidth(), primaria = false) { confirmar = true }
         else Pildora("Sí, borrarla para siempre", Modifier.fillMaxWidth(), primaria = false) {
             c?.let { Grabadora.detenerReproduccion(); Casa.borrarCinta(it.id) }; alCerrar()

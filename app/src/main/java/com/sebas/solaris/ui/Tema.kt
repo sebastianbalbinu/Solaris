@@ -85,6 +85,8 @@ object Tema {
         private set
     var colorNoche by mutableIntStateOf(0)
         private set
+    var sonidoMar by mutableStateOf(true)
+        private set
 
     fun iniciar(ctx: Context) {
         prefs = ctx.getSharedPreferences("tema", Context.MODE_PRIVATE)
@@ -92,6 +94,12 @@ object Tema {
         tamano = prefs.getInt("tamano", 1)
         colorDia = prefs.getInt("color_dia", 0)
         colorNoche = prefs.getInt("color_noche", 0)
+        sonidoMar = prefs.getBoolean("sonido_mar", true)
+    }
+
+    fun alternarSonidoMar() {
+        sonidoMar = !sonidoMar
+        prefs.edit().putBoolean("sonido_mar", sonidoMar).apply()
     }
 
     /** Se llama cada minuto para que el modo automático cambie solo al atardecer. */

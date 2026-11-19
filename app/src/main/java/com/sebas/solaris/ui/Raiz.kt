@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -42,6 +43,10 @@ object Nav {
     var ajustes by mutableStateOf(false)
     var cambiarPin by mutableStateOf(false)
     var cintaElegida by mutableStateOf<String?>(null)
+    /** Lo que pidió el widget ("escribir" o "grabar"). */
+    var pendiente by mutableStateOf<String?>(null)
+    /** Dónde ibas en la lista del cuaderno. */
+    val listaCuaderno = LazyListState()
 
     fun abrirNota(id: String?) { borrador = Borrador(id, null) }
     fun reiniciar() { pestana = "cuaderno"; borrador = null; ajustes = false; cambiarPin = false; cintaElegida = null }
@@ -222,6 +227,13 @@ private fun Candado(visible: Boolean, alCerrar: () -> Unit) {
 
 @Composable
 fun Interior() {
+    LaunchedEffect(Nav.pendiente) {
+        when (Nav.pendiente) {
+            "escribir" -> { Nav.ajustes = false; Nav.abrirNota(null) }
+            "grabar" -> { Nav.ajustes = false; Nav.borrador = null; Nav.pestana = "cinta" }
+        }
+        Nav.pendiente = null
+    }
     Box(Modifier.fillMaxSize()) {
         when {
             Nav.cambiarPin -> Box(Modifier.fillMaxSize().background(Tema.p.fondo)) { PinNuevo { Nav.cambiarPin = false } }

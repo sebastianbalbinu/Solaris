@@ -312,3 +312,31 @@ fun BotonModo(modifier: Modifier = Modifier) {
         if (Tema.esNoche) IconoLuna(p.texto) else IconoSol(p.texto)
     }
 }
+
+@Composable
+fun IconoLupa(color: Color, tam: Dp = 20.dp) {
+    Canvas(Modifier.size(tam)) {
+        val s = size.width; val g = s * 0.09f
+        drawCircle(color, s * 0.27f, Offset(s * 0.43f, s * 0.43f), style = Stroke(g))
+        drawLine(color, Offset(s * 0.63f, s * 0.63f), Offset(s * 0.86f, s * 0.86f), g, StrokeCap.Round)
+    }
+}
+
+@Composable
+fun IconoParlante(color: Color, encendido: Boolean, tam: Dp = 20.dp) {
+    Canvas(Modifier.size(tam)) {
+        val s = size.width; val g = s * 0.08f
+        val p = Path().apply {
+            moveTo(s * 0.12f, s * 0.38f); lineTo(s * 0.3f, s * 0.38f); lineTo(s * 0.52f, s * 0.18f)
+            lineTo(s * 0.52f, s * 0.82f); lineTo(s * 0.3f, s * 0.62f); lineTo(s * 0.12f, s * 0.62f); close()
+        }
+        drawPath(p, color, style = Stroke(g))
+        if (encendido) {
+            drawArc(color, -45f, 90f, false, Offset(s * 0.42f, s * 0.3f), Size(s * 0.36f, s * 0.4f), style = Stroke(g, cap = StrokeCap.Round))
+            drawArc(color, -50f, 100f, false, Offset(s * 0.4f, s * 0.16f), Size(s * 0.54f, s * 0.68f), style = Stroke(g, cap = StrokeCap.Round))
+        } else {
+            drawLine(color, Offset(s * 0.66f, s * 0.38f), Offset(s * 0.88f, s * 0.62f), g, StrokeCap.Round)
+            drawLine(color, Offset(s * 0.88f, s * 0.38f), Offset(s * 0.66f, s * 0.62f), g, StrokeCap.Round)
+        }
+    }
+}

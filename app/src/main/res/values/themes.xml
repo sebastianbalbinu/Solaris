@@ -7,4 +7,5 @@
     </style>
     <color name="noche">#000000</color>
     <string name="app_name">Solaris</string>
+    <string name="widget_desc">Escribir o grabar con un toque</string>
 </resources>
