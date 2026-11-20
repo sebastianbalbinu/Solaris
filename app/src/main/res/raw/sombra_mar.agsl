@@ -47,14 +47,15 @@ float fbm(float2 p) {
 
 // una octava de oleaje: crestas agudas y valles anchos, deformada por ruido para que no se repita
 float octava(float2 uv, float pico) {
-    uv += float2(ruido(uv), ruido(uv + float2(7.3, 1.9))) * 2.0 - 1.0;
+    float w = ruido(uv) * 2.0 - 1.0;
+    uv += float2(w, w * 0.7);
     float2 wv = 1.0 - abs(sin(uv));
     float2 swv = abs(cos(uv));
     wv = mix(wv, swv, wv);
     return pow(1.0 - pow(wv.x * wv.y, 0.65), pico);
 }
 
-// el mar de viento: cuatro octavas que se cruzan; las que no caben en un píxel se apagan
+// el mar de viento: tres octavas que se cruzan; las que no caben en un píxel se apagan
 float viento(float2 p, float pie, float amp0, float pico0) {
     float fr = 0.16;
     float amp = amp0;
@@ -62,7 +63,7 @@ float viento(float2 p, float pie, float amp0, float pico0) {
     float2 uv = p;
     float hh = 0.0;
     float vel = 0.8 + 0.6 * amp0;
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 3; i++) {
         float ver = smoothstep(1.5, 4.0, 6.2832 / fr / pie);
         float d = octava((uv + t * vel) * fr, pico) + octava((uv - t * vel) * fr, pico);
         hh += d * amp * ver;

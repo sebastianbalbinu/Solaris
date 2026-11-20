@@ -193,13 +193,25 @@ private class EstadoMar {
     }
 }
 
-// ---------------- el lienzo reducido ----------------
+// ---------------- el motor: pinta el mar en su propio hilo ----------------
 
-/** Pinta el sombreador en una superficie pequeña de la tarjeta gráfica y la devuelve como imagen. */
+/** Un solo reloj y un solo estado para todo el mar: así no se reinicia al pasar de una pantalla a otra. */
+private val origen = android.os.SystemClock.uptimeMillis()
+private val estadoMar = EstadoMar()
+
+/** El último cuadro pintado, para que una pantalla nueva nunca empiece en blanco. */
+private var ultimoCuadro: ImageBitmap? = null
+
+/**
+ * Pinta el sombreador en una superficie pequeña de la tarjeta gráfica, en un hilo aparte:
+ * la interfaz nunca espera al mar. Cada cuadro listo se entrega por [alCuadro].
+ */
 @RequiresApi(33)
-private class LienzoReducido(val w: Int, val h: Int) {
+private class MotorMar(val w: Int, val h: Int, private val sombra: RuntimeShader, private val alCuadro: (ImageBitmap) -> Unit) {
+    private val hilo = android.os.HandlerThread("mar", android.os.Process.THREAD_PRIORITY_DISPLAY).apply { start() }
+    private val manejo = android.os.Handler(hilo.looper)
     private val lector = ImageReader.newInstance(
-        w, h, PixelFormat.RGBA_8888, 3,
+        w, h, PixelFormat.RGBA_8888, 5,
         HardwareBuffer.USAGE_GPU_SAMPLED_IMAGE or HardwareBuffer.USAGE_GPU_COLOR_OUTPUT,
     )
     private val nodo = RenderNode("mar").apply { setPosition(0, 0, w, h) }
@@ -209,31 +221,67 @@ private class LienzoReducido(val w: Int, val h: Int) {
         isOpaque = true
     }
     private val pintura = android.graphics.Paint()
-    // la imagen que se está mostrando: se suelta cuando llega la siguiente
-    private var abierta: ImagenCruda? = null
-    private var ultima: ImageBitmap? = null
+    // las dos imágenes más recientes siguen abiertas mientras la pantalla las muestra
+    private val abiertas = ArrayDeque<ImagenCruda>()
+    @Volatile var periodoMs = 33L
+    private var corriendo = false
+    private var anterior = 0L
+    private var proximo = 0L
 
-    fun pintar(s: RuntimeShader): ImageBitmap? {
-        val c = nodo.beginRecording()
-        pintura.shader = s
-        c.drawRect(0f, 0f, w.toFloat(), h.toFloat(), pintura)
-        nodo.endRecording()
-        pintor.createRenderRequest().setWaitForPresent(true).syncAndDraw()
-        val img = try { lector.acquireNextImage() } catch (e: IllegalStateException) { null } ?: return ultima
-        val buf = img.hardwareBuffer
-        if (buf == null) { img.close(); return ultima }
-        val bmp = Bitmap.wrapHardwareBuffer(buf, ColorSpace.get(ColorSpace.Named.SRGB))
-        buf.close()
-        abierta?.close()
-        abierta = img
-        ultima = bmp?.asImageBitmap() ?: ultima
-        return ultima
+    init {
+        lector.setOnImageAvailableListener({ r ->
+            val img = try { r.acquireLatestImage() } catch (e: IllegalStateException) { null } ?: return@setOnImageAvailableListener
+            val buf = img.hardwareBuffer
+            if (buf == null) { img.close(); return@setOnImageAvailableListener }
+            val bmp = Bitmap.wrapHardwareBuffer(buf, ColorSpace.get(ColorSpace.Named.SRGB))
+            buf.close()
+            abiertas.addLast(img)
+            while (abiertas.size > 2) abiertas.removeFirst().close()
+            if (bmp != null) alCuadro(bmp.asImageBitmap())
+        }, manejo)
     }
 
+    private val paso = object : Runnable {
+        override fun run() {
+            if (!corriendo) return
+            val ahora = android.os.SystemClock.uptimeMillis()
+            val dt = ((ahora - anterior) / 1000.0).coerceIn(0.0, 0.1)
+            anterior = ahora
+            estadoMar.avanzar(Clima.mar, dt)
+            estadoMar.aplicar(sombra, (ahora - origen) / 1000f + 20f, w.toFloat(), h.toFloat())
+            val c = nodo.beginRecording()
+            pintura.shader = sombra
+            c.drawRect(0f, 0f, w.toFloat(), h.toFloat(), pintura)
+            nodo.endRecording()
+            pintor.createRenderRequest().syncAndDraw()
+            // ritmo exacto: el próximo cuadro se agenda contra el reloj, no contra cuánto tardó este
+            proximo += periodoMs
+            if (proximo <= ahora) proximo = ahora + periodoMs
+            manejo.postAtTime(this, proximo)
+        }
+    }
+
+    fun arrancar() = manejo.post {
+        if (!corriendo) {
+            corriendo = true
+            anterior = android.os.SystemClock.uptimeMillis()
+            proximo = anterior
+            manejo.post(paso)
+        }
+    }
+
+    /** Se queda quieto: la última imagen sigue en pantalla y la tarjeta gráfica descansa. */
+    fun parar() = manejo.post { corriendo = false; manejo.removeCallbacks(paso) }
+
     fun soltar() {
-        pintor.destroy()
-        abierta?.close()
-        lector.close()
+        manejo.post {
+            corriendo = false
+            manejo.removeCallbacksAndMessages(null)
+            pintor.destroy()
+            lector.setOnImageAvailableListener(null, null)
+            lector.close()
+            hilo.quitSafely()
+        }
     }
 }
 
@@ -278,63 +326,26 @@ private fun MarVivo(modifier: Modifier, vivo: Boolean) {
         Image(painterResource(R.drawable.mar_quieto), null, modifier, contentScale = ContentScale.Crop)
         return
     }
-    val estado = remember { EstadoMar() }
     val grano = remember { ShaderBrush(ImageShader(teselaDeGrano(), TileMode.Repeated, TileMode.Repeated)) }
     var tam by remember { mutableStateOf(IntSize.Zero) }
-    var cuadro by remember { mutableStateOf<ImageBitmap?>(null) }
+    var cuadro by remember { mutableStateOf(ultimoCuadro) }
     var granoDesfase by remember { mutableStateOf(Offset.Zero) }
 
-    LaunchedEffect(tam, vivo) {
-        if (tam.width == 0 || tam.height == 0) return@LaunchedEffect
-        var escala = 3
-        var lienzo = LienzoReducido(max(1, tam.width / escala), max(1, tam.height / escala))
-        try {
-            var inicio = 0L
-            var anterior = 0L
-            var ultimoCuadro = 0L
-            var ultimoGrano = 0L
-            var ultimoTermico = 0L
-            var periodo = 1_000_000_000L / 30
-            do {
-                withFrameNanos { ahora ->
-                    if (inicio == 0L) { inicio = ahora; anterior = ahora }
-                    // ritmo exacto: un cuadro cada 2 refrescos a 60 Hz, cada 4 a 120 Hz
-                    if (ultimoCuadro == 0L || ahora - ultimoCuadro >= periodo - 4_000_000L) {
-                        val dt = ((ahora - anterior) / 1e9).coerceIn(0.0, 0.1)
-                        anterior = ahora
-                        ultimoCuadro = ahora
-                        estado.avanzar(Clima.mar, dt)
-                        estado.aplicar(sombra, ((ahora - inicio) / 1e9).toFloat() + 20f, lienzo.w.toFloat(), lienzo.h.toFloat())
-                        cuadro = lienzo.pintar(sombra)
-                    }
-                    if (ahora - ultimoGrano >= 83_000_000L) {
-                        ultimoGrano = ahora
-                        granoDesfase = Offset(Random.nextFloat() * 256f, Random.nextFloat() * 256f)
-                    }
-                    // cada cinco segundos se mira la temperatura: si sube, menos cuadros y menos resolución
-                    if (ahora - ultimoTermico >= 5_000_000_000L) {
-                        ultimoTermico = ahora
-                        val calor = caliente(ctx)
-                        periodo = 1_000_000_000L / (if (calor) 20 else 30)
-                        val nuevaEscala = if (calor) 4 else 3
-                        if (nuevaEscala != escala) {
-                            escala = nuevaEscala
-                            lienzo.soltar()
-                            lienzo = LienzoReducido(max(1, tam.width / escala), max(1, tam.height / escala))
-                        }
-                    }
-                }
-            } while (isActive && vivo)
-        } finally {
-            if (!vivo) {
-                // se queda el último cuadro en pantalla: hay que copiarlo antes de soltar el lienzo
-                cuadro = cuadro?.let { c ->
-                    try {
-                        c.asAndroidBitmapCopia()
-                    } catch (e: Exception) { null }
-                }
-            }
-            lienzo.soltar()
+    val motor = remember(tam) {
+        if (tam.width == 0 || tam.height == 0) null
+        else MotorMar(max(1, tam.width / 3), max(1, tam.height / 3), sombra) { c -> cuadro = c; ultimoCuadro = c }
+    }
+    DisposableEffect(motor) { onDispose { motor?.soltar() } }
+    LaunchedEffect(motor, vivo) {
+        if (motor == null) return@LaunchedEffect
+        if (!vivo) { motor.parar(); return@LaunchedEffect }
+        motor.arrancar()
+        var vueltas = 0
+        while (isActive) {
+            // el grano salta de lugar 12 veces por segundo; cada cinco segundos se mira la temperatura
+            granoDesfase = Offset(Random.nextFloat() * 256f, Random.nextFloat() * 256f)
+            if (vueltas++ % 60 == 0) motor.periodoMs = if (caliente(ctx)) 50L else 33L
+            kotlinx.coroutines.delay(83)
         }
     }
 
@@ -361,7 +372,3 @@ private fun MarVivo(modifier: Modifier, vivo: Boolean) {
         }
     }
 }
-
-/** Copia una imagen de la tarjeta gráfica a una propia, para que sobreviva cuando se suelta el lienzo. */
-private fun ImageBitmap.asAndroidBitmapCopia(): ImageBitmap =
-    this.asAndroidBitmap().copy(Bitmap.Config.HARDWARE, false).asImageBitmap()

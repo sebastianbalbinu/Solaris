@@ -26,6 +26,8 @@ data class Item(
     val esEntrada: Boolean get() = kind == "entrada"
     val esCuarto: Boolean get() = kind == "cuarto"
     val esCinta: Boolean get() = kind == "cinta"
+    /** Un rumor es sonido de la vida que no se transcribe; una voz, ideas o poemas dichos en vivo. */
+    val esRumor: Boolean get() = esCinta && room == "rumor"
 
     /** Páginas que suma al tomo: una por cada ~180 palabras (mínimo una) y una por cada foto. */
     val paginas: Int

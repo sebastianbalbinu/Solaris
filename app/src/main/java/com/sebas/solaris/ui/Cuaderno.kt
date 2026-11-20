@@ -24,6 +24,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
@@ -47,97 +48,6 @@ import java.util.Locale
 
 val ES: Locale = Locale("es", "CO")
 fun formato(patron: String, cuando: Long): String = SimpleDateFormat(patron, ES).format(Date(cuando))
-
-@Composable
-fun Cuaderno() {
-    val p = Tema.p
-    var buscando by remember { mutableStateOf(false) }
-    var busqueda by remember { mutableStateOf("") }
-    val todas = Casa.notas()
-    val notas = if (buscando && busqueda.isNotBlank()) todas.filter { (it.title + " " + it.text).contains(busqueda.trim(), ignoreCase = true) } else todas
-    val (a, b) = Tema.saludo()
-
-    Box(Modifier.fillMaxSize().background(p.fondo)) {
-        LazyColumn(
-            Modifier.fillMaxSize().statusBarsPadding(),
-            state = Nav.listaCuaderno,
-            contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 190.dp),
-        ) {
-            item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Senal(formato("EEEE d 'de' MMMM", System.currentTimeMillis()), Modifier.weight(1f))
-                    Redondo(alTocar = { buscando = !buscando; busqueda = "" }) { IconoLupa(p.texto) }
-                    Spacer(Modifier.width(10.dp))
-                    BotonModo()
-                    Spacer(Modifier.width(10.dp))
-                    Redondo(alTocar = { Nav.ajustes = true }) { IconoPuntos(p.texto) }
-                }
-            }
-            if (buscando) {
-                item {
-                    BasicTextField(
-                        value = busqueda,
-                        onValueChange = { busqueda = it },
-                        singleLine = true,
-                        textStyle = TextStyle(color = p.texto, fontFamily = Sans, fontSize = 17.sp),
-                        cursorBrush = SolidColor(p.acento),
-                        modifier = Modifier.fillMaxWidth().padding(top = 18.dp).clip(RoundedCornerShape(14.dp)).background(p.superficie).padding(horizontal = 16.dp, vertical = 13.dp),
-                        decorationBox = { campo -> Box { if (busqueda.isEmpty()) Text("Buscar en el cuaderno", color = p.texto2, fontFamily = Sans, fontSize = 17.sp); campo() } },
-                    )
-                }
-            }
-            item {
-                Column(Modifier.padding(top = 40.dp, bottom = 36.dp)) {
-                    TituloSerif(a, tam = 46)
-                    TituloSerif(b, tam = 46, italica = true)
-                }
-            }
-            item {
-                Column {
-                    Row(Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
-                        Senal("Cuaderno", Modifier.weight(1f), color = p.texto)
-                        Senal(if (notas.size == 1) "1 nota" else "${notas.size} notas")
-                    }
-                    Box(Modifier.fillMaxWidth().padding(top = 6.dp).height(1.dp).background(p.texto.copy(alpha = 0.7f)))
-                }
-            }
-            if (notas.isEmpty()) {
-                item {
-                    Parrafo("El cuaderno está en blanco. Escribe lo primero que no quieras perder.", Modifier.padding(top = 24.dp))
-                }
-            }
-            items(notas, key = { it.id }) { n -> FilaNota(n) { Nav.abrirNota(n.id) } }
-        }
-
-        Pildora(
-            "Escribir",
-            Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 24.dp, bottom = 92.dp),
-            icono = { IconoMas(p.botonTexto) },
-        ) { Nav.abrirNota(null) }
-    }
-}
-
-@Composable
-private fun FilaNota(n: Item, alTocar: () -> Unit) {
-    val p = Tema.p
-    val cabeza = n.title.ifBlank { sinMarcas(n.text.lineSequence().firstOrNull { it.isNotBlank() } ?: "Fotos") }
-    val resto = sinMarcas(if (n.title.isBlank()) n.text.lineSequence().filter { it.isNotBlank() }.drop(1).joinToString("\n") else n.text)
-    Column(Modifier.fillMaxWidth().clickable(onClick = alTocar)) {
-        Row(Modifier.padding(vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(cabeza, color = p.texto, fontFamily = Serif, fontSize = 23.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (resto.isNotBlank()) Text(resto, color = p.texto2, fontFamily = Sans, fontSize = 14.sp, lineHeight = 20.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            }
-            n.photos.firstOrNull()?.let { f ->
-                Spacer(Modifier.width(14.dp))
-                Foto(f, Modifier.size(56.dp).clip(RoundedCornerShape(10.dp)), lado = 200)
-            }
-            Spacer(Modifier.width(14.dp))
-            Senal(formato("d MMM", n.created))
-        }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(p.linea))
-    }
-}
 
 /** Una foto cifrada: la abre aquí o la trae de la nube si hace falta. */
 @Composable
@@ -198,12 +108,18 @@ fun Editor(b: Borrador) {
     }
     BackHandler(enabled = !hojaLetra && !hojaOpciones && fotoAbierta == null) { guardarYSalir() }
 
-    Box(Modifier.fillMaxSize().background(p.fondo).systemBarsPadding().imePadding()) {
+    // la lámina: arriba se ve el mar quieto, que se funde con el papel
+    Box(Modifier.fillMaxSize()) {
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(0f to Color.Transparent, 0.10f to p.fondo.copy(alpha = 0.35f), 0.24f to p.fondo, 1f to p.fondo)
+            )
+        )
+    Box(Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Redondo(alTocar = { guardarYSalir() }) { IconoAtras(p.texto) }
                 Spacer(Modifier.weight(1f))
-                Senal(formato("d MMM · HH:mm", b.creado))
                 Spacer(Modifier.weight(1f))
                 Redondo(alTocar = { hojaLetra = true }) { Text("Aa", color = p.texto, fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 15.sp) }
                 Spacer(Modifier.width(8.dp))
@@ -214,8 +130,13 @@ fun Editor(b: Borrador) {
                 }
             }
             Column(
-                Modifier.weight(1f).fillMaxWidth().verticalScroll(desplazamiento).padding(horizontal = 24.dp).padding(top = 18.dp, bottom = 120.dp),
+                Modifier.weight(1f).fillMaxWidth().verticalScroll(desplazamiento).padding(horizontal = 24.dp).padding(top = 96.dp, bottom = 120.dp),
             ) {
+                Senal(
+                    "Día " + Casa.diaDeBitacora(b.creado) + " · " + formato("HH:mm", b.creado) + " · " + Corriente.nombreVisible,
+                    color = p.texto2,
+                )
+                Spacer(Modifier.height(10.dp))
                 Escribible(
                     b.titulo, { b.titulo = it }, "Título",
                     TextStyle(color = p.texto, fontFamily = Serif, fontSize = 34.sp, lineHeight = 38.sp),
@@ -296,6 +217,7 @@ fun Editor(b: Borrador) {
                 Nav.borrador = null
             }
         }
+    }
     }
 }
 

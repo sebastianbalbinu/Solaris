@@ -16,6 +16,9 @@ import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.haze
 import dev.chrisbanes.haze.hazeChild
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -53,29 +56,32 @@ import kotlinx.coroutines.withContext
 /** Dónde está uno dentro de la estación. Sobrevive al cierre. */
 object Nav {
     var enPortada by mutableStateOf(false)
-    var pestana by mutableStateOf("cuaderno")
     var borrador by mutableStateOf<Borrador?>(null)
     var ajustes by mutableStateOf(false)
     var cambiarPin by mutableStateOf(false)
-    var cintaElegida by mutableStateOf<String?>(null)
+    /** Grabando sobre el mar. */
+    var grabando by mutableStateOf(false)
+    /** La cinta abierta para escuchar. */
+    var escuchando by mutableStateOf<String?>(null)
     /** Lo que pidió el widget ("escribir" o "grabar"). */
     var pendiente by mutableStateOf<String?>(null)
-    /** Dónde ibas en la lista del cuaderno. */
-    val listaCuaderno = LazyListState()
+    /** Qué tan hondo ibas en la orilla. */
+    val listaOrilla = LazyListState()
 
     fun abrirNota(id: String?) { borrador = Borrador(id, null) }
-    fun reiniciar() { pestana = "cuaderno"; borrador = null; ajustes = false; cambiarPin = false; cintaElegida = null }
+    fun reiniciar() { borrador = null; ajustes = false; cambiarPin = false; grabando = false; escuchando = null }
 }
 
 @Composable
 fun Solaris(act: MainActivity) {
     val p = Tema.p
     val vista = LocalView.current
+    val enCasa = Casa.conectada && Casa.lista
+    val encima = Nav.borrador != null || Nav.ajustes || Nav.cambiarPin
     val pantallaOscura = when {
-        !Casa.conectada || !Casa.lista -> Tema.esNoche || Nav.enPortada
-        !Casa.abierta -> true
-        Nav.borrador != null || Nav.ajustes || Nav.cambiarPin -> Tema.esNoche
-        else -> Tema.esNoche || Nav.pestana != "cuaderno"
+        !enCasa -> Tema.esNoche || Nav.enPortada
+        Casa.abierta && encima -> Tema.esNoche
+        else -> true
     }
     SideEffect {
         val c = WindowCompat.getInsetsController(act.window, vista)
@@ -85,14 +91,24 @@ fun Solaris(act: MainActivity) {
     LaunchedEffect(Unit) {
         while (isActive) { delay(60_000); Tema.tic() }
     }
-    LaunchedEffect(Unit) { Clima.actualizar() }
+    LaunchedEffect(Unit) {
+        while (isActive) { Clima.actualizar(); delay(15 * 60 * 1000L) }
+    }
 
-    Box(Modifier.fillMaxSize().background(if (Casa.abierta || !Casa.lista) p.fondo else Color.Black)) {
+    Box(Modifier.fillMaxSize().background(if (enCasa) Color.Black else p.fondo)) {
+        // un solo mar, debajo de todo: la entrada y la orilla son el mismo; se queda quieto mientras uno escribe
+        if (enCasa) {
+            val enSuperficie = Nav.listaOrilla.firstVisibleItemIndex == 0
+            MarCianotipo(Modifier.fillMaxSize(), vivo = !(Casa.abierta && (encima || !enSuperficie)))
+        }
         when {
             !Casa.conectada -> Conectar()
             !Casa.lista -> Bienvenida(act)
-            Casa.abierta -> Interior()
-            else -> Entrada(act)
+            else -> AnimatedContent(
+                targetState = Casa.abierta,
+                transitionSpec = { fadeIn(tween(900)) togetherWith fadeOut(tween(700)) },
+                label = "llegada",
+            ) { abierta -> if (abierta) Interior() else Entrada(act) }
         }
     }
 }
@@ -124,13 +140,17 @@ fun Entrada(act: MainActivity) {
     }
     val e = (1 - Math.pow(1 - llegada, 3.0)).toFloat()
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
-        // el mar sube desde el abismo: aparece desde abajo mientras se aclara
-        MarCianotipo(Modifier.fillMaxSize().graphicsLayer {
-            alpha = aparicion
-            translationY = (1f - e) * size.height * 0.10f
-        })
-        Box(Modifier.fillMaxSize().graphicsLayer { alpha = (1f - e) * 0.85f }.background(Color.Black))
+    Box(Modifier.fillMaxSize()) {
+        // el mar sube desde el abismo: la oscuridad se retira de abajo hacia arriba
+        val velo = 1f - minOf(e, aparicion)
+        Box(Modifier.fillMaxSize().background(
+            Brush.verticalGradient(
+                0f to Color.Black.copy(alpha = (velo * 3f).coerceAtMost(1f)),
+                (velo * 0.9f).coerceIn(0.001f, 0.98f) to Color.Black.copy(alpha = (velo * 3f).coerceAtMost(1f)),
+                (velo * 0.9f + 0.25f).coerceIn(0.002f, 0.999f) to Color.Black.copy(alpha = velo * 0.6f),
+                1f to Color.Transparent,
+            )
+        ))
         Box(Modifier.fillMaxWidth().height(220.dp).background(Brush.verticalGradient(listOf(Color(0xAA02070F), Color.Transparent))))
         Box(Modifier.fillMaxWidth().fillMaxHeight(0.55f).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC02070F)))))
 
@@ -257,80 +277,35 @@ private fun Candado(visible: Boolean, alCerrar: () -> Unit) {
 
 // ---------------- adentro ----------------
 
-@OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun Interior() {
     LaunchedEffect(Nav.pendiente) {
         when (Nav.pendiente) {
             "escribir" -> { Nav.ajustes = false; Nav.abrirNota(null) }
-            "grabar" -> { Nav.ajustes = false; Nav.borrador = null; Nav.pestana = "cinta" }
+            "grabar" -> { Nav.ajustes = false; Nav.borrador = null; Nav.grabando = true }
         }
         Nav.pendiente = null
     }
-    val vidrio = remember { HazeState() }
-    val b = Nav.borrador
-    val destino: Any = when {
-        Nav.cambiarPin -> "pin"
-        Nav.ajustes -> "ajustes"
-        b != null -> b
-        else -> "pestana:" + Nav.pestana
-    }
+    // lo último que estuvo abierto, para que pueda salir con su animación
+    var ultimoBorrador by remember { mutableStateOf<Borrador?>(null) }
+    Nav.borrador?.let { ultimoBorrador = it }
+
     Box(Modifier.fillMaxSize()) {
-        AnimatedContent(
-            targetState = destino,
-            modifier = Modifier.fillMaxSize().haze(vidrio),
-            transitionSpec = {
-                if (targetState is Borrador) {
-                    (fadeIn(tween(280)) + scaleIn(tween(320, easing = FastOutSlowInEasing), initialScale = 0.95f)) togetherWith fadeOut(tween(160))
-                } else {
-                    fadeIn(tween(240)) togetherWith fadeOut(tween(180))
-                }
-            },
-            label = "lugares",
-        ) { d ->
-            when (d) {
-                is Borrador -> Editor(d)
-                "pin" -> Box(Modifier.fillMaxSize().background(Tema.p.fondo).systemBarsPadding()) { PinNuevo { Nav.cambiarPin = false } }
-                "ajustes" -> Ajustes()
-                "pestana:cinta" -> Cinta()
-                "pestana:oceano" -> Oceano()
-                else -> Cuaderno()
-            }
-        }
-        if (destino is String && destino.startsWith("pestana:")) {
-            BarraPestanas(vidrio, Modifier.align(Alignment.BottomCenter))
-        }
+        Orilla()
+        Encima(Nav.borrador != null) { ultimoBorrador?.let { Editor(it) } }
+        Encima(Nav.ajustes) { Ajustes() }
+        Encima(Nav.cambiarPin) { Box(Modifier.fillMaxSize().background(Tema.p.fondo).systemBarsPadding()) { PinNuevo { Nav.cambiarPin = false } } }
+        Grabacion()
+        Escuchar()
     }
 }
 
-/** La barra de abajo: una píldora flotante de vidrio esmerilado con los tres lugares. */
+/** Lo que sube sobre el mar: una lámina que llega con resorte y se hunde al cerrarse. */
 @Composable
-fun BarraPestanas(vidrio: HazeState, modifier: Modifier = Modifier) {
-    val oscura = Tema.esNoche || Nav.pestana != "cuaderno"
-    val tinte = if (oscura) Color(0x990B1620) else Color(0xA6EDE3CF)
-    val activo = if (oscura) Color(0xFFE8DCC4) else Color(0xFF12304A)
-    val inactivo = if (oscura) Azules.Bruma else Color(0xFF5B6E80)
-    val forma = RoundedCornerShape(28.dp)
-    Row(
-        modifier.navigationBarsPadding().padding(bottom = 14.dp)
-            .hazeChild(vidrio, forma, HazeStyle(tint = tinte, blurRadius = 26.dp, noiseFactor = 0.08f))
-            .border(1.dp, if (oscura) Color(0x1FB9C6CC) else Color(0x1412304A), forma)
-            .padding(horizontal = 6.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        listOf("cuaderno" to "Cuaderno", "cinta" to "Cinta", "oceano" to "Océano").forEach { (clave, nombre) ->
-            val sel = Nav.pestana == clave
-            val fondoSel by animateColorAsState(
-                if (sel) (if (oscura) Color(0x33B9C6CC) else Color(0xCCF8F1E5)) else Color.Transparent, tween(220), label = "pestana",
-            )
-            Box(
-                Modifier.presionable { if (!sel) { Sonidos.tic(); Nav.pestana = clave } }
-                    .clip(RoundedCornerShape(22.dp)).background(fondoSel)
-                    .padding(horizontal = 18.dp, vertical = 11.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(nombre, color = if (sel) activo else inactivo, fontFamily = Sans, fontSize = 14.sp)
-            }
-        }
-    }
+private fun Encima(visible: Boolean, contenido: @Composable () -> Unit) {
+    AnimatedVisibility(
+        visible,
+        enter = slideInVertically(spring(dampingRatio = 0.86f, stiffness = 300f)) { it / 4 } + fadeIn(tween(320)),
+        exit = slideOutVertically(tween(300)) { it / 4 } + fadeOut(tween(260)),
+    ) { contenido() }
 }

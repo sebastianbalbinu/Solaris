@@ -415,9 +415,9 @@ object Casa {
     }
 
     /** Registra una cinta recién grabada. El audio queda en el celular; a la nube sube solo su ficha y su texto. */
-    fun nuevaCinta(id: String, nombre: String, duracion: Long, creada: Long) {
+    fun nuevaCinta(id: String, nombre: String, duracion: Long, creada: Long, rumor: Boolean = false) {
         // se guarda en el acto: puede llamarse justo antes de que el telón se cierre
-        guardarInterno(Item(id = id, kind = "cinta", room = null, title = nombre, text = "", photos = emptyList(),
+        guardarInterno(Item(id = id, kind = "cinta", room = if (rumor) "rumor" else null, title = nombre, text = "", photos = emptyList(),
             color = 0, created = creada, updated = System.currentTimeMillis(), dur = duracion))
         sincronizar()
     }
@@ -431,6 +431,22 @@ object Casa {
         val c = porId(id) ?: return
         archivoCinta(id).delete()
         guardar(c.copy(title = "", text = "", updated = System.currentTimeMillis(), deleted = true))
+    }
+
+    /** Qué día de la bitácora es: el primero es el día del primer registro. */
+    fun diaDeBitacora(t: Long): Int {
+        val primero = items.filter { (it.esEntrada || it.esCinta) && !it.deleted }.minOfOrNull { it.created } ?: t
+        return (((t - minOf(primero, t)) / 86_400_000L) + 1).toInt()
+    }
+
+    /** Todo lo que se le ha entregado al mar, de lo más nuevo a lo más viejo. */
+    fun registros(): List<Item> = items.filter { (it.esEntrada || it.esCinta) && !it.deleted }.sortedByDescending { it.created }
+
+    /** Fragmentos para que emerjan cerca del horizonte: cosas de hace más de una semana, al azar. */
+    fun ecos(): List<Item> {
+        val semana = 7L * 24 * 3600 * 1000
+        val viejos = registros().filter { System.currentTimeMillis() - it.created > semana }
+        return (viejos.ifEmpty { registros().drop(1) }).shuffled().take(12)
     }
 
     /** Lo que el océano devuelve para una consulta de la terminal. */
@@ -448,6 +464,9 @@ object Casa {
             "ayer" -> { val a = (hoy.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -1) }; todo.filter { mismoDia(it.created, a) } }
             "notas" -> todo.filter { it.esEntrada }
             "cintas" -> todo.filter { it.esCinta }
+            "voces", "voz" -> todo.filter { it.esCinta && !it.esRumor }
+            "rumores", "rumor" -> todo.filter { it.esRumor }
+            "escritos" -> todo.filter { it.esEntrada }
             "todo" -> todo
             else -> todo.filter { (it.title + " " + it.text).lowercase().contains(q) }
         }

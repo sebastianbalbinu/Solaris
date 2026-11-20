@@ -70,7 +70,7 @@ fun Ajustes() {
                 Fila("Papel de día", NombresPapel[Tema.papel.coerceIn(0, 2)])
                 Fila("De noche", NombresOscuro[Tema.oscuro.coerceIn(0, 1)])
             }
-            Grupo("Cintas") {
+            Grupo("Voces y rumores") {
                 FilaAccion("Exportar todas a una carpeta") { Casa.pausarCandado = true; carpeta.launch(null) }
                 if (aviso != null) Parrafo(aviso ?: "", Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
             }
@@ -91,7 +91,7 @@ fun Ajustes() {
             Grupo("Cómo se cuida") {
                 Parrafo(
                     "Notas y fotos se cifran en este celular con tu frase llave antes de subir: en la nube solo hay datos ilegibles. " +
-                        "Las cintas de audio se quedan en este celular; a la nube suben su nombre y su transcripción. " +
+                        "Las voces y los rumores se quedan en este celular; a la nube suben su nombre y, en las voces, su transcripción. " +
                         "Para transcribir, el audio viaja una vez (reducido a 16 kHz) a Whisper por medio de tu Supabase, y no se guarda allá. " +
                         "El océano lee el mar real del Paso de Drake cada hora en Open-Meteo.",
                     Modifier.padding(16.dp),
