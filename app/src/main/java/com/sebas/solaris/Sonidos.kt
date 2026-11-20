@@ -16,6 +16,15 @@ object Sonidos {
     private var tic = 0
     private var vibrador: Vibrator? = null
     private lateinit var app: Context
+    private val prefs by lazy { app.getSharedPreferences("sonidos", Context.MODE_PRIVATE) }
+    /** Los clics de los botones. */
+    var conSonido: Boolean
+        get() = prefs.getBoolean("sonido", true)
+        set(v) { prefs.edit().putBoolean("sonido", v).apply() }
+    /** Que los botones (y los rayos) se sientan en la mano. */
+    var conVibracion: Boolean
+        get() = prefs.getBoolean("vibracion", true)
+        set(v) { prefs.edit().putBoolean("vibracion", v).apply() }
 
     fun iniciar(ctx: Context) {
         if (pool != null) return
@@ -24,7 +33,8 @@ object Sonidos {
             .setMaxStreams(4)
             .setAudioAttributes(
                 AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                    // con el volumen de medios: el de "sonidos del sistema" suele estar en cero y no se oía nada
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                     .build()
             ).build()
@@ -42,31 +52,71 @@ object Sonidos {
 
     /** Tecla de la grabadora: suena y se siente en la mano. */
     fun tecla() {
-        pool?.play(tecla, 0.9f, 0.9f, 1, 0, 1f)
+        if (conSonido) pool?.play(tecla, 1f, 1f, 1, 0, 1f)
         vibrar(fuerte = true)
     }
 
-    fun suelta() { pool?.play(suelta, 0.5f, 0.5f, 1, 0, 1f) }
+    fun suelta() { if (conSonido) pool?.play(suelta, 0.7f, 0.7f, 1, 0, 1f) }
 
     fun tic() {
-        pool?.play(tic, 0.25f, 0.25f, 1, 0, 1f)
+        if (conSonido) pool?.play(tic, 0.6f, 0.6f, 1, 0, 1f)
         vibrar(fuerte = false)
     }
 
     /** Un tic muy suave, sin vibración: el arranque escribiéndose. */
-    fun teclear() { pool?.play(tic, 0.12f, 0.12f, 0, 0, 1.25f) }
+    fun teclear() { if (conSonido) pool?.play(tic, 0.25f, 0.25f, 0, 0, 1.25f) }
+
+    /**
+     * Un rayo se siente siempre: un chasquido seco al caer y, segundos después, el trueno que rueda.
+     * Funciona aunque el celular no permita graduar la fuerza de la vibración.
+     */
+    fun rayo(lejano: Boolean) {
+        val v = vibrador ?: return
+        if (!conVibracion || !v.hasVibrator()) return
+        try {
+            if (v.hasAmplitudeControl()) v.vibrate(VibrationEffect.createOneShot(if (lejano) 18 else 30, if (lejano) 120 else 255))
+            else v.vibrate(VibrationEffect.createOneShot(if (lejano) 15 else 25, VibrationEffect.DEFAULT_AMPLITUDE))
+        } catch (e: Exception) {}
+    }
+
+    fun trueno(lejano: Boolean) {
+        val v = vibrador ?: return
+        if (!conVibracion || !v.hasVibrator()) return
+        val f = if (lejano) 0.55f else 1f
+        try {
+            if (v.hasAmplitudeControl()) {
+                val tiempos = longArrayOf(0, 90, 60, 160, 90, 320, 120, 180)
+                val fuerza = intArrayOf(0, (90 * f).toInt(), (30 * f).toInt(), (150 * f).toInt(), (45 * f).toInt(), (110 * f).toInt(), (20 * f).toInt(), (60 * f).toInt())
+                v.vibrate(VibrationEffect.createWaveform(tiempos, fuerza, -1))
+            } else {
+                v.vibrate(VibrationEffect.createWaveform(if (lejano) longArrayOf(0, 60, 90, 120) else longArrayOf(0, 90, 70, 180, 90, 120), -1))
+            }
+        } catch (e: Exception) {}
+    }
+
+    /** Un pulso suave, para respirar (al cambiar de inhalar a exhalar). */
+    fun pulso() {
+        val v = vibrador ?: return
+        if (!conVibracion) return
+        try {
+            if (v.hasAmplitudeControl()) v.vibrate(VibrationEffect.createOneShot(40, 70))
+            else v.vibrate(VibrationEffect.createOneShot(25, VibrationEffect.DEFAULT_AMPLITUDE))
+        } catch (e: Exception) {}
+    }
 
     /** El acople con la estación: una vibración firme. */
     fun acople() { vibrar(fuerte = true) }
 
+    /**
+     * Pulsos explícitos (duración y fuerza) en vez de los efectos predefinidos del sistema:
+     * muchos celulares (Xiaomi, entre ellos) ignoran esos efectos y los botones no se sentían.
+     */
     private fun vibrar(fuerte: Boolean) {
         val v = vibrador ?: return
+        if (!conVibracion) return
         try {
-            if (Build.VERSION.SDK_INT >= 29) {
-                v.vibrate(VibrationEffect.createPredefined(if (fuerte) VibrationEffect.EFFECT_HEAVY_CLICK else VibrationEffect.EFFECT_TICK))
-            } else {
-                v.vibrate(VibrationEffect.createOneShot(if (fuerte) 22 else 8, if (fuerte) 200 else 60))
-            }
+            if (v.hasAmplitudeControl()) v.vibrate(VibrationEffect.createOneShot(if (fuerte) 26 else 12, if (fuerte) 220 else 110))
+            else v.vibrate(VibrationEffect.createOneShot(if (fuerte) 22 else 10, VibrationEffect.DEFAULT_AMPLITUDE))
         } catch (e: Exception) {}
     }
 

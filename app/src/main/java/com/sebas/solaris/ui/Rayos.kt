@@ -173,7 +173,9 @@ fun Tormenta(jugador: ExoPlayer, vivo: Boolean) {
                 if (rayos.size < 2 && Random.nextFloat() < tasa * 0.25f) {
                     val lejano = v == "mar_bravo" || Random.nextFloat() < 0.3f
                     rayos += Rayo(Random.nextLong(), lejano)
-                    if (!lejano || Random.nextFloat() < 0.5f) scope.launch { delay(1200L + Random.nextLong(2300)); trueno(ctx, lejano) }
+                    // cada rayo se siente: el chasquido al caer y el trueno que llega después
+                    com.sebas.solaris.Sonidos.rayo(lejano)
+                    scope.launch { delay((if (lejano) 2200L else 900L) + Random.nextLong(1600)); com.sebas.solaris.Sonidos.trueno(lejano) }
                 }
             }
             delay(250)
@@ -185,8 +187,11 @@ fun Tormenta(jugador: ExoPlayer, vivo: Boolean) {
             withFrameNanos { t ->
                 cuadro = t
                 rayos.removeAll { it.termino(t) }
+                // cuánta luz hay ahora: la usa la lámina para encenderse aunque el papel tape el cielo
+                Relampago.brillo = rayos.maxOfOrNull { it.intensidad(t) * it.escala } ?: 0f
             }
         }
+        Relampago.brillo = 0f
     }
     if (rayos.isEmpty()) return
 
@@ -240,11 +245,13 @@ fun Tormenta(jugador: ExoPlayer, vivo: Boolean) {
                     val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
                         style = android.graphics.Paint.Style.STROKE; strokeCap = android.graphics.Paint.Cap.ROUND; strokeJoin = android.graphics.Paint.Join.ROUND
                     }
-                    for ((ancho, difuso, alfa) in listOf(Triple(16f, 12f, 0.22f), Triple(6f, 4f, 0.5f), Triple(1.8f, 0f, 1f))) {
+                    for ((ancho, difuso, alfa) in listOf(Triple(9f, 7f, 0.16f), Triple(3.6f, 1.6f, 0.55f), Triple(1.7f, 0f, 1f), Triple(0.7f, 0f, 1f))) {
                         p.maskFilter = if (difuso > 0f && Build.VERSION.SDK_INT >= 28) BlurMaskFilter(difuso * density * r.escala, BlurMaskFilter.Blur.NORMAL) else null
                         for (t in r.trazos) {
                             p.strokeWidth = ancho * density * r.escala * (0.5f + 0.5f * t.brillo)
-                            p.color = android.graphics.Color.argb((255 * min(1f, t.brillo * alfa * i)).toInt(), 238, 244, 255)
+                            // el hilo del centro es blanco puro; el halo, apenas azulado
+                            val (rr, gg, bb) = if (ancho < 1f) Triple(255, 255, 255) else Triple(228, 238, 255)
+                            p.color = android.graphics.Color.argb((255 * min(1f, t.brillo * alfa * i)).toInt(), rr, gg, bb)
                             val a = aPantalla(t.x0, t.y0); val b = aPantalla(t.x1, t.y1)
                             c.nativeCanvas.drawLine(a.x, a.y, b.x, b.y, p)
                         }
@@ -267,15 +274,7 @@ fun Tormenta(jugador: ExoPlayer, vivo: Boolean) {
     }
 }
 
-/** El trueno no suena (el mar es silencioso): se siente, largo y tenue, un par de segundos después. */
-private fun trueno(ctx: Context, lejano: Boolean) {
-    val v: Vibrator = if (Build.VERSION.SDK_INT >= 31) (ctx.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
-        else @Suppress("DEPRECATION") (ctx.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator)
-    if (!v.hasVibrator()) return
-    val f = if (lejano) 0.5f else 1f
-    val tiempos = longArrayOf(0, 70, 50, 140, 80, 260)
-    val fuerza = intArrayOf(0, (45 * f).toInt(), (18 * f).toInt(), (70 * f).toInt(), (25 * f).toInt(), (38 * f).toInt())
-    try {
-        if (v.hasAmplitudeControl()) v.vibrate(VibrationEffect.createWaveform(tiempos, fuerza, -1))
-    } catch (e: Exception) {}
+/** La luz del relámpago en este instante (0..1), para lo que tapa el cielo. */
+object Relampago {
+    var brillo by mutableFloatStateOf(0f)
 }

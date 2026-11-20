@@ -29,6 +29,7 @@ class MainActivity : FragmentActivity() {
         Paquete.iniciar(this)
         Paquete.descargar()
         Marea.iniciar(this)
+        com.sebas.solaris.ui.Respiraciones.iniciar(this)
         recibir(intent)
         setContent { Solaris(this) }
     }

@@ -95,6 +95,32 @@ fun Ajustes() {
                 FilaAccion("Exportar todas a una carpeta") { Casa.pausarCandado = true; carpeta.launch(null) }
                 if (aviso != null) Parrafo(aviso ?: "", Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
             }
+            Grupo("Tacto y sonido") {
+                var sonido by remember { mutableStateOf(Sonidos.conSonido) }
+                var vibra by remember { mutableStateOf(Sonidos.conVibracion) }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Clics de los botones", color = p.texto, fontFamily = Sans, fontSize = 16.sp)
+                        Text("Suenan con el volumen de medios", color = p.texto2, fontFamily = Sans, fontSize = 13.sp)
+                    }
+                    Switch(
+                        checked = sonido,
+                        onCheckedChange = { sonido = it; Sonidos.conSonido = it; Sonidos.tic() },
+                        colors = SwitchDefaults.colors(checkedTrackColor = Azules.Cianotipo, checkedThumbColor = Color.White),
+                    )
+                }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Vibración", color = p.texto, fontFamily = Sans, fontSize = 16.sp)
+                        Text("Botones, respiración y cada rayo con su trueno", color = p.texto2, fontFamily = Sans, fontSize = 13.sp)
+                    }
+                    Switch(
+                        checked = vibra,
+                        onCheckedChange = { vibra = it; Sonidos.conVibracion = it; Sonidos.tecla() },
+                        colors = SwitchDefaults.colors(checkedTrackColor = Azules.Cianotipo, checkedThumbColor = Color.White),
+                    )
+                }
+            }
             Grupo("Entrada") {
                 if (hayHuella) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {

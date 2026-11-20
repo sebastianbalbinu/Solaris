@@ -122,6 +122,19 @@ fun Solaris(act: MainActivity) {
                 label = "llegada",
             ) { abierta -> if (abierta) Interior() else Entrada(act) }
         }
+        // escribiendo, el papel tapa el cielo, pero la luz de los relámpagos pasa a través de él
+        if (enCasa && Nav.borrador != null) {
+            androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+                val b = Relampago.brillo
+                if (b > 0.01f) drawRect(
+                    Brush.verticalGradient(
+                        0f to Color(0xFFE6EEF6).copy(alpha = (b * 0.34f).coerceAtMost(0.34f)),
+                        0.45f to Color(0xFFE6EEF6).copy(alpha = (b * 0.16f).coerceAtMost(0.16f)),
+                        1f to Color(0xFFE6EEF6).copy(alpha = (b * 0.08f).coerceAtMost(0.08f)),
+                    )
+                )
+            }
+        }
     }
 }
 
