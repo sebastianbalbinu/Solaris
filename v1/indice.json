@@ -118,6 +118,15 @@
   "noche__aurora.mp4": 143779,
   "aurora__noche.mp4": 147185,
   "noche__temporal_noche.mp4": 166678,
-  "temporal_noche__noche.mp4": 180965
- }
+  "temporal_noche__noche.mp4": 180965,
+  "temporal.mascara": 64800,
+  "temporal_noche.mascara": 64800,
+  "chubasco.mascara": 64800
+ },
+ "mascaras": {
+  "temporal": "temporal.mascara",
+  "temporal_noche": "temporal_noche.mascara",
+  "chubasco": "chubasco.mascara"
+ },
+ "mascara_columnas": 90
 }
