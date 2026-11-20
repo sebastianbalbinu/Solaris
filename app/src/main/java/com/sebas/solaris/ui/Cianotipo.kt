@@ -389,6 +389,10 @@ private fun conectar(tv: TextureView, jugador: ExoPlayer) {
         override fun onVideoSizeChanged(videoSize: VideoSize) = recortar()
     })
     jugador.setVideoTextureView(tv)
+    // el mar va a 60 cuadros: en pantallas de 90 o 120 Hz se le pide ese ritmo exacto para que no tiemble
+    if (android.os.Build.VERSION.SDK_INT >= 30) {
+        jugador.setVideoChangeFrameRateStrategy(androidx.media3.common.C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_ONLY_IF_SEAMLESS)
+    }
 }
 
 /** El agua tiembla con la voz: ondas que bajan desde el horizonte, más fuertes cerca. */

@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit
  * (por defecto solo con Wi-Fi) y queda en el celular; si sale un paquete nuevo, se baja solo lo que cambió.
  */
 object Paquete {
-    private const val BASE = "https://raw.githubusercontent.com/sebastianbalbinu/Solaris/mar/v1/"
+    private const val BASE = "https://raw.githubusercontent.com/sebastianbalbinu/Solaris/mar/v2/"
     private lateinit var dir: File
     private lateinit var app: Context
     private val http = OkHttpClient.Builder().connectTimeout(20, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).build()
@@ -60,7 +60,9 @@ object Paquete {
 
     fun iniciar(ctx: Context) {
         app = ctx.applicationContext
-        dir = File(ctx.filesDir, "mar/v1").apply { mkdirs() }
+        // el mar liminal (v2) reemplaza al realista: lo viejo se borra para no ocupar espacio
+        File(ctx.filesDir, "mar/v1").takeIf { it.exists() }?.deleteRecursively()
+        dir = File(ctx.filesDir, "mar/v2").apply { mkdirs() }
         File(dir, "indice.json").takeIf { it.exists() }?.let { try { leerIndice(JSONObject(it.readText())) } catch (e: Exception) {} }
     }
 

@@ -3,6 +3,7 @@ package com.sebas.solaris.ui
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -148,6 +149,15 @@ object Tema {
         prefs.edit().putBoolean("proteger_pantalla", si).apply()
     }
 
+    /** Cuánto tapa el papel al mar mientras se escribe: 0.4 deja ver mucho mar, 1 lo tapa del todo. */
+    var papelLamina by mutableFloatStateOf(0.88f)
+        private set
+
+    fun fijarPapelLamina(v: Float) {
+        papelLamina = v.coerceIn(0.4f, 1f)
+        prefs.edit().putFloat("papel_lamina", papelLamina).apply()
+    }
+
     /** Modo oscuro: 0 abismo, 1 cianotipo. */
     var oscuro by mutableIntStateOf(0)
         private set
@@ -161,6 +171,7 @@ object Tema {
         papel = prefs.getInt("papel", 1)
         oscuro = prefs.getInt("oscuro", 0)
         protegerPantalla = prefs.getBoolean("proteger_pantalla", false)
+        papelLamina = prefs.getFloat("papel_lamina", 0.88f)
     }
 
 

@@ -18,6 +18,8 @@ uniform float solh;
 uniform float luna;
 uniform float nieve;
 uniform float aurora;
+uniform float sueno;
+uniform float bancos;
 
 float cl(float x) { return clamp(x, 0.0, 1.0); }
 
@@ -229,7 +231,7 @@ half4 main(float2 fragCoord) {
         float bajo = smoothstep(hz + 1.0, hz - 2.0, y);
         float ds = length(float2(x, y) - cd) / (W * 0.034);
         float velo = (1.0 - nubes * 0.5) * (1.0 - sombra * 0.4);
-        brilloSol = (smoothstep(1.15, 0.6, ds) * 0.9 + exp(-ds * 0.35) * 0.35) * alba * bajo * velo;
+        brilloSol = mix(smoothstep(1.15, 0.6, ds) * 0.9 + exp(-ds * 0.35) * 0.35, smoothstep(2.6, 0.0, ds) * 0.45 + exp(-ds * 0.22) * 0.3, sueno) * alba * bajo * velo;
         // la luna: más pequeña, de borde nítido, con sus mares grises y un halo frío alrededor
         float dl = length(float2(x, y) - cd) / (W * 0.022);
         float mares = ruido((float2(x, y) - cd) / (W * 0.009)) * 0.5 + ruido((float2(x, y) - cd) / (W * 0.004) + 3.0) * 0.5;
@@ -277,8 +279,9 @@ half4 main(float2 fragCoord) {
         float h0 = viento(pw, pie, amp0, pico0);
         float hx = viento(pw + float2(e, 0.0), pie, amp0, pico0);
         float hz2 = viento(pw + float2(0.0, e), pie, amp0, pico0);
-        dx += (hx - h0) / e;
-        dz += (hz2 - h0) / e;
+        float liso = 1.0 - 0.62 * sueno;
+        dx += (hx - h0) / e * liso;
+        dz += (hz2 - h0) / e * liso;
         float corta = h0 / (amp0 * 1.4 + 0.0001);
         float3 nrm = normalize(float3(-dx, 1.0, -dz));
         float3 vista = dir;
@@ -307,8 +310,10 @@ half4 main(float2 fragCoord) {
         // el sol (o la luna) velado deja un camino de luz
         float3 sol = normalize(float3((solx - 0.5) * 1.15, max(solh, 0.02), 1.0));
         float brilla = cl(dot(r, sol));
-        float caminoSol = pow(brilla, 120.0) * (0.9 - nubes * 0.6) * (0.15 + 0.85 * luz + alba);
-        float caminoLuna = pow(brilla, 420.0) * (0.9 - nubes * 0.6) * luna * 1.6;
+        float caminoNitido = pow(brilla, 120.0) * (0.9 - nubes * 0.6) * (0.15 + 0.85 * luz + alba);
+        float caminoVelado = (pow(brilla, 9.0) * 0.10 + pow(brilla, 30.0) * 0.06) * (0.9 - nubes * 0.5) * (0.3 + 0.7 * luz + alba);
+        float caminoSol = mix(caminoNitido, caminoVelado, sueno);
+        float caminoLuna = mix(pow(brilla, 420.0) * 1.6, pow(brilla, 40.0) * 0.35, sueno) * (0.9 - nubes * 0.6) * luna;
         lum += caminoSol + caminoLuna;
         brilloSol = caminoSol * 0.8;
         brilloLuna = caminoLuna * 0.8;
@@ -347,7 +352,7 @@ half4 main(float2 fragCoord) {
         // en días cubiertos el mar refleja ese cielo plomizo
         gris = nubes * nubes * 0.45 * fres + nubes * nubes * 0.18;
         // distancia: el mar se pierde en la bruma
-        float nb = 1.0 - exp(-dist / (vis * 450.0 + 30.0));
+        float nb = 1.0 - exp(-dist / ((vis * 450.0 + 30.0) * (1.0 - 0.45 * sueno)));
         float bruma = cieloEn(0.0) * 0.95 + cl(1.0 - vis * 0.5) * 0.16;
         lum += (bruma - lum) * nb;
         esp *= 1.0 - nb;
@@ -394,6 +399,18 @@ half4 main(float2 fragCoord) {
         lum += copos * 0.6;
     }
 
+    // bancos de niebla que pasan rasantes sobre el agua, se abren y se cierran
+    if (bancos > 0.01) {
+        float2 fq = float2(fragCoord.x / W * 2.2 + t * 0.035, (fragCoord.y - hz) / H * 7.0);
+        float banda = exp(-pow((fragCoord.y - hz) / (H * 0.07) - 0.15, 2.0) * 1.4);
+        float jiron = fbm(fq + float2(fbm(fq * 0.7 + t * 0.02), 0.0) * 1.3);
+        float niebla = smoothstep(0.42, 0.82, jiron) * banda * bancos;
+        lum = mix(lum, 0.44 + 0.06 * luz, cl(niebla) * 0.75);
+        esp *= 1.0 - cl(niebla);
+    }
+    // el sueño: negros levantados, contraste bajo, una luz alta y lechosa
+    lum = mix(lum, 0.07 + lum * 0.86, sueno);
+
     // noche: la misma lámina, más hundida
     lum *= 0.62 + 0.38 * luz + alba * 0.1;
     lum = pow(cl(lum), 1.12 - 0.35 * luz) * (1.04 + 0.32 * luz) + 0.05 * luz;
@@ -407,6 +424,9 @@ half4 main(float2 fragCoord) {
     // el sol calienta lo que toca; la luna lo enfría
     col = mix(col, half3(0.98, 0.91, 0.76), half(cl(brilloSol * 0.9)));
     col = mix(col, half3(0.82, 0.89, 0.96), half(cl(brilloLuna * 0.9)));
+    // el sueño también apaga el color: azules lavados, casi grises, con un dejo cian
+    half lm = dot(col, half3(0.3, 0.55, 0.15));
+    col = mix(col, mix(half3(lm), col, 0.72) * half3(0.96, 1.0, 1.04) + half3(0.0, 0.01, 0.018), half(sueno));
     // hora azul: todo se tiñe de prusia
     col = mix(col, col * half3(0.78, 0.94, 1.22), half(azul));
     return half4(col, 1.0);

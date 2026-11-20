@@ -10,20 +10,23 @@ from agsl import render
 src = open(sys.argv[1]).read()
 OUT = sys.argv[2]
 ini = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'hornear.py')).read()
-bloque = ini[ini.index('BASE = dict('):ini.index('VECINOS = [')]
+bloque = ini[ini.index('W, H, FPS, SEG'):ini.index('VECINOS = [')]
 exec(bloque)
-W, H, FPS, N, FUNDE, T0, COL = 450, 1000, 30, 360, 45, 20.0, 90
+W, H, COL = 450, 1000, 90
+# el bucle va a FPS (con su tiempo más lento); la máscara se guarda a 30 cuadros por segundo de video
+K = SEG * 30
 MASC = src.replace('    if (!agua) {\n', '    if (agua) { return half4(1.0, 1.0, 1.0, 1.0); } else { return half4(0.0, 0.0, 0.0, 1.0); }\n    if (!agua) {\n', 1)
 for nombre in sys.argv[3:]:
     u = dict(BASE, **ESTADOS[nombre])
-    filas = np.zeros((N, COL), np.uint16)
-    for i in range(N):
-        # el cuadro i del bucle: los últimos FUNDE se mezclan con el principio; se toma el que pesa más
-        if i < N - FUNDE: t = T0 + (FUNDE + i) / FPS
+    filas = np.zeros((K, COL), np.uint16)
+    for i in range(K):
+        k = i * FPS // 30
+        # el cuadro k del bucle: los últimos FUNDE se mezclan con el principio; se toma el que pesa más
+        if k < N - FUNDE: c = FUNDE + k
         else:
-            j = i - (N - FUNDE)
-            t = T0 + (N + j) / FPS if j < FUNDE / 2 else T0 + j / FPS
-        m = np.asarray(render(MASC, W, H, dict(u, t=t))[0])[..., 0] > 127
+            j = k - (N - FUNDE)
+            c = N + j if j < FUNDE / 2 else j
+        m = np.asarray(render(MASC, W, H, dict(u, t=T0 + c / FPS * LENTO))[0])[..., 0] > 127
         cols = m.reshape(H, COL, W // COL).any(axis=2)
         primero = np.where(cols.any(axis=0), cols.argmax(axis=0), H)
         filas[i] = (primero / H * 65535).astype(np.uint16)

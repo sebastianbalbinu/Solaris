@@ -123,7 +123,9 @@ fun Editor(b: Borrador) {
     Box(Modifier.fillMaxSize()) {
         Box(
             Modifier.fillMaxSize().background(
-                Brush.verticalGradient(0f to Color.Transparent, 0.10f to p.fondo.copy(alpha = 0.4f), 0.28f to p.fondo.copy(alpha = 0.8f), 0.5f to p.fondo.copy(alpha = 0.88f), 1f to p.fondo.copy(alpha = 0.9f))
+                Tema.papelLamina.let { a ->
+                    Brush.verticalGradient(0f to Color.Transparent, 0.10f to p.fondo.copy(alpha = a * 0.45f), 0.28f to p.fondo.copy(alpha = a * 0.9f), 0.5f to p.fondo.copy(alpha = a), 1f to p.fondo.copy(alpha = (a * 1.02f).coerceAtMost(1f)))
+                }
             )
         )
     Box(Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
@@ -458,6 +460,19 @@ fun HojaLetra(visible: Boolean, nota: Borrador? = null, alCerrar: () -> Unit) {
                     }
                 }
             }
+        }
+
+        Text("Cuánto mar se ve al escribir", color = p.texto2, fontFamily = Sans, fontSize = 13.sp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("mar", color = p.texto2, fontFamily = Sans, fontSize = 13.sp)
+            androidx.compose.material3.Slider(
+                value = Tema.papelLamina,
+                onValueChange = { Tema.fijarPapelLamina(it) },
+                valueRange = 0.4f..1f,
+                colors = androidx.compose.material3.SliderDefaults.colors(thumbColor = p.acento, activeTrackColor = p.acento, inactiveTrackColor = p.linea),
+                modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
+            )
+            Text("papel", color = p.texto2, fontFamily = Sans, fontSize = 13.sp)
         }
 
         Text("Modo", color = p.texto2, fontFamily = Sans, fontSize = 13.sp)
