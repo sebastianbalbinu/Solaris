@@ -61,6 +61,8 @@ private val Claro = Color(0xFFDCE6EA)
 @Composable
 fun Orilla() {
     val lista = Nav.listaOrilla
+    // grabar es sobre el mar abierto: si uno estaba hondo entre los recuerdos, sube a la superficie
+    LaunchedEffect(Nav.grabando) { if (Nav.grabando && lista.firstVisibleItemIndex + lista.firstVisibleItemScrollOffset > 0) lista.animateScrollToItem(0) }
     var consulta by remember { mutableStateOf("") }
     val todos = Casa.registros()
     val registros = remember(consulta, Casa.items) {

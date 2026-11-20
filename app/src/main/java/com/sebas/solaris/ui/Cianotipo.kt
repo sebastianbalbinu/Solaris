@@ -1,12 +1,15 @@
 package com.sebas.solaris.ui
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.graphics.RenderEffect
 import android.graphics.RuntimeShader
 import android.net.Uri
 import android.os.Build
 import android.view.TextureView
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
@@ -30,6 +33,9 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
@@ -44,6 +50,10 @@ import com.sebas.solaris.Paquete
 import com.sebas.solaris.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import java.io.File
 import java.util.Calendar
 import kotlin.math.abs
@@ -248,23 +258,58 @@ fun MarCianotipo(modifier: Modifier, vivo: Boolean = true) {
     var temblor by remember { mutableStateOf(0f) }
     var visita by remember { mutableStateOf<Visita?>(null) }
 
-    val mareas = remember {
-        Corriente.iniciar(Clima.mar)
-        Mareas(ctx).also { it.empezar(Corriente.objetivo) }
+    val mareas = remember { Mareas(ctx) }
+    var listo by remember { mutableStateOf(false) }
+    var primerCuadro by remember { mutableStateOf(false) }
+    val aparece by animateFloatAsState(if (primerCuadro) 1f else 0f, tween(900), label = "aparece")
+    // mientras arranca se ve el último cuadro que se vio (no la calma de fábrica), así no hay salto
+    val ultimo = remember { File(ctx.filesDir, "mar/ultimo.jpg") }
+    val quieto = remember {
+        try { if (ultimo.exists()) BitmapFactory.decodeFile(ultimo.path)?.asImageBitmap() else null } catch (e: Exception) { null }
     }
-    DisposableEffect(Unit) { onDispose { mareas.soltar() } }
-    LaunchedEffect(vivo) { mareas.jugador.playWhenReady = vivo }
+    var lienzo by remember { mutableStateOf<TextureView?>(null) }
+    DisposableEffect(Unit) {
+        mareas.jugador.addListener(object : Player.Listener {
+            override fun onRenderedFirstFrame() { primerCuadro = true }
+        })
+        onDispose { mareas.soltar() }
+    }
+    // al irse, se guarda el cuadro que se estaba viendo
+    val ciclo = LocalLifecycleOwner.current
+    DisposableEffect(ciclo) {
+        val o = LifecycleEventObserver { _, e ->
+            if (e == Lifecycle.Event.ON_STOP) lienzo?.let { tv ->
+                try {
+                    if (primerCuadro && tv.width > 0) tv.getBitmap(tv.width / 3, tv.height / 3)?.let { b ->
+                        ultimo.parentFile?.mkdirs()
+                        ultimo.outputStream().use { b.compress(Bitmap.CompressFormat.JPEG, 82, it) }
+                    }
+                } catch (e: Exception) {}
+            }
+        }
+        ciclo.lifecycle.addObserver(o)
+        onDispose { ciclo.lifecycle.removeObserver(o) }
+    }
+    // el primer estado se elige con el clima de ahora (se espera un momento al Drake), no con el de la última vez
+    LaunchedEffect(Unit) {
+        val pedido = CoroutineScope(Dispatchers.IO).async { Clima.actualizar() }
+        withTimeoutOrNull(2500) { pedido.await() }
+        Corriente.iniciar(Clima.mar)
+        mareas.empezar(Corriente.objetivo)
+        listo = true
+    }
+    LaunchedEffect(vivo, listo) { mareas.jugador.playWhenReady = vivo && listo }
 
     // la corriente avanza una vez por segundo; si el objetivo cambia, el mar emprende el camino
-    LaunchedEffect(Unit) {
-        while (isActive) {
+    LaunchedEffect(listo) {
+        while (isActive && listo) {
             Corriente.avanzar(Clima.mar, 1.0)
             mareas.seguir()
             delay(1000)
         }
     }
     // cuando llega un archivo nuevo del paquete, el mar puede usarlo
-    LaunchedEffect(Paquete.estados) { mareas.seguir() }
+    LaunchedEffect(Paquete.estados, listo) { if (listo) mareas.seguir() }
 
     // respirar: el mar se aquieta y va más lento
     val velocidad = if (Oleaje.respirando) 0.45f else 1f
@@ -293,10 +338,13 @@ fun MarCianotipo(modifier: Modifier, vivo: Boolean = true) {
     val efecto = remember { if (Build.VERSION.SDK_INT >= 33) try { RuntimeShader(AGUA_QUE_TIEMBLA) } catch (e: Exception) { null } else null }
 
     Box(modifier) {
-        Image(painterResource(R.drawable.mar_quieto), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        if (quieto != null) Image(quieto, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        else Image(painterResource(R.drawable.mar_quieto), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         AndroidView(
-            factory = { c -> TextureView(c).also { tv -> conectar(tv, mareas.jugador) } },
+            factory = { c -> TextureView(c).also { tv -> lienzo = tv; conectar(tv, mareas.jugador) } },
             modifier = Modifier.fillMaxSize().graphicsLayer {
+                // el video entra fundiéndose sobre el cuadro quieto
+                alpha = aparece
                 // la voz hace temblar el agua
                 if (Build.VERSION.SDK_INT >= 33 && efecto != null && temblor > 0.02f) {
                     efecto.setFloatUniform("res", size.width, size.height)

@@ -235,7 +235,7 @@ fun HojaNotion(paginas: List<Notion.Pagina>?, archivos: Map<String, ByteArray>, 
         val elegidas = remember(cambio, ps) { ps.count { it.elegida } }
         Text("Páginas de Notion", color = p.texto, fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 17.sp)
         if (hechas >= 0 && !trayendo) {
-            Parrafo("Entraron $hechas escritos al mar, cada uno a la profundidad de su fecha.")
+            Parrafo("Entraron $hechas escritos al mar, cada uno a la profundidad de su fecha. Para verlos juntos, escribe «notion» en el sonar de Recordar.")
             Pildora("Listo", Modifier.fillMaxWidth()) { alCerrar() }
             return@Hoja
         }

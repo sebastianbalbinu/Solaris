@@ -470,6 +470,7 @@ object Casa {
             "rumores", "rumor" -> todo.filter { it.esRumor }
             "escritos" -> todo.filter { it.esEntrada }
             "todo" -> todo
+            "notion" -> todo.filter { it.id.startsWith("notion-") }
             else -> todo.filter { (it.title + " " + it.text).lowercase().contains(q) }
         }
     }
