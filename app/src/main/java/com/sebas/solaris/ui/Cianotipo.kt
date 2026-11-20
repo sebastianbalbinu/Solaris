@@ -341,7 +341,7 @@ fun MarCianotipo(modifier: Modifier, vivo: Boolean = true) {
         if (quieto != null) Image(quieto, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         else Image(painterResource(R.drawable.mar_quieto), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         AndroidView(
-            factory = { c -> TextureView(c).also { tv -> lienzo = tv; conectar(tv, mareas.jugador) } },
+            factory = { c -> TextureView(c).also { tv -> lienzo = tv; MarVivo.lienzo = tv; conectar(tv, mareas.jugador) } },
             modifier = Modifier.fillMaxSize().graphicsLayer {
                 // el video entra fundiéndose sobre el cuadro quieto
                 alpha = aparece
@@ -393,6 +393,12 @@ private fun conectar(tv: TextureView, jugador: ExoPlayer) {
     if (android.os.Build.VERSION.SDK_INT >= 30) {
         jugador.setVideoChangeFrameRateStrategy(androidx.media3.common.C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_ONLY_IF_SEAMLESS)
     }
+}
+
+/** El mar que se está viendo, para poder fotografiarlo (al compartir una lámina). */
+object MarVivo {
+    var lienzo: TextureView? = null
+    fun cuadro(): Bitmap? = try { lienzo?.takeIf { it.width > 0 }?.bitmap } catch (e: Exception) { null }
 }
 
 /** El agua tiembla con la voz: ondas que bajan desde el horizonte, más fuertes cerca. */

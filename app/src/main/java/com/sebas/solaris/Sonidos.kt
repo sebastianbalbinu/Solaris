@@ -10,6 +10,9 @@ import android.os.VibratorManager
 
 /** Clics mecánicos, vibración y el rumor del mar. */
 object Sonidos {
+    /** Solo suena con la app a la vista: al salir, la pantalla de entrada se escribía sola y "crujía" de fondo. */
+    @Volatile var aLaVista = true
+
     private var pool: SoundPool? = null
     private var tecla = 0
     private var suelta = 0
@@ -52,19 +55,19 @@ object Sonidos {
 
     /** Tecla de la grabadora: suena y se siente en la mano. */
     fun tecla() {
-        if (conSonido) pool?.play(tecla, 1f, 1f, 1, 0, 1f)
+        if (conSonido && aLaVista) pool?.play(tecla, 1f, 1f, 1, 0, 1f)
         vibrar(fuerte = true)
     }
 
-    fun suelta() { if (conSonido) pool?.play(suelta, 0.7f, 0.7f, 1, 0, 1f) }
+    fun suelta() { if (conSonido && aLaVista) pool?.play(suelta, 0.7f, 0.7f, 1, 0, 1f) }
 
     fun tic() {
-        if (conSonido) pool?.play(tic, 0.6f, 0.6f, 1, 0, 1f)
+        if (conSonido && aLaVista) pool?.play(tic, 0.6f, 0.6f, 1, 0, 1f)
         vibrar(fuerte = false)
     }
 
     /** Un tic muy suave, sin vibración: el arranque escribiéndose. */
-    fun teclear() { if (conSonido) pool?.play(tic, 0.25f, 0.25f, 0, 0, 1.25f) }
+    fun teclear() { if (conSonido && aLaVista) pool?.play(tic, 0.25f, 0.25f, 0, 0, 1.25f) }
 
     /**
      * Un rayo se siente siempre: un chasquido seco al caer y, segundos después, el trueno que rueda.
@@ -72,7 +75,7 @@ object Sonidos {
      */
     fun rayo(lejano: Boolean) {
         val v = vibrador ?: return
-        if (!conVibracion || !v.hasVibrator()) return
+        if (!conVibracion || !aLaVista || !v.hasVibrator()) return
         try {
             if (v.hasAmplitudeControl()) v.vibrate(VibrationEffect.createOneShot(if (lejano) 18 else 30, if (lejano) 120 else 255))
             else v.vibrate(VibrationEffect.createOneShot(if (lejano) 15 else 25, VibrationEffect.DEFAULT_AMPLITUDE))
@@ -81,7 +84,7 @@ object Sonidos {
 
     fun trueno(lejano: Boolean) {
         val v = vibrador ?: return
-        if (!conVibracion || !v.hasVibrator()) return
+        if (!conVibracion || !aLaVista || !v.hasVibrator()) return
         val f = if (lejano) 0.55f else 1f
         try {
             if (v.hasAmplitudeControl()) {
@@ -97,7 +100,7 @@ object Sonidos {
     /** Un pulso suave, para respirar (al cambiar de inhalar a exhalar). */
     fun pulso() {
         val v = vibrador ?: return
-        if (!conVibracion) return
+        if (!conVibracion || !aLaVista) return
         try {
             if (v.hasAmplitudeControl()) v.vibrate(VibrationEffect.createOneShot(40, 70))
             else v.vibrate(VibrationEffect.createOneShot(25, VibrationEffect.DEFAULT_AMPLITUDE))
@@ -113,7 +116,7 @@ object Sonidos {
      */
     private fun vibrar(fuerte: Boolean) {
         val v = vibrador ?: return
-        if (!conVibracion) return
+        if (!conVibracion || !aLaVista) return
         try {
             if (v.hasAmplitudeControl()) v.vibrate(VibrationEffect.createOneShot(if (fuerte) 26 else 12, if (fuerte) 220 else 110))
             else v.vibrate(VibrationEffect.createOneShot(if (fuerte) 22 else 10, VibrationEffect.DEFAULT_AMPLITUDE))

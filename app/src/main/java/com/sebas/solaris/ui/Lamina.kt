@@ -2,6 +2,7 @@ package com.sebas.solaris.ui
 
 import android.content.ClipData
 import android.content.Context
+import androidx.compose.ui.graphics.asAndroidBitmap
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -55,6 +56,58 @@ suspend fun compartirPdf(ctx: Context, b: Borrador) {
     val uri = FileProvider.getUriForFile(ctx, ctx.packageName + ".archivos", archivo)
     val envio = Intent(Intent.ACTION_SEND).apply {
         type = "application/pdf"
+        putExtra(Intent.EXTRA_STREAM, uri)
+        clipData = ClipData.newRawUri(archivo.name, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    Casa.pausarCandado = true
+    ctx.startActivity(Intent.createChooser(envio, "Compartir lámina").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+}
+
+/**
+ * La lámina como imagen larga: lo que se ve en la app (diagramación, fotos, citas, sello) sobre el mar de este momento,
+ * que se funde con el papel hacia abajo.
+ */
+suspend fun compartirImagen(ctx: Context, b: Borrador, contenido: androidx.compose.ui.graphics.ImageBitmap) {
+    val mar = MarVivo.cuadro()
+    val fondo = Tema.p.fondo.toArgb()
+    val papel = Tema.papelLamina
+    val archivo = withContext(Dispatchers.Default) {
+        var c = contenido.asAndroidBitmap()
+        if (c.config == android.graphics.Bitmap.Config.HARDWARE) c = c.copy(android.graphics.Bitmap.Config.ARGB_8888, false)
+        val w = c.width; val h = c.height
+        // muy larga: se achica un poco para que pese lo razonable
+        val escala = minOf(1f, kotlin.math.sqrt(20_000_000f / (w.toFloat() * h)))
+        val sal = android.graphics.Bitmap.createBitmap((w * escala).toInt(), (h * escala).toInt(), android.graphics.Bitmap.Config.ARGB_8888)
+        val lz = Canvas(sal)
+        lz.scale(escala, escala)
+        lz.drawColor(fondo)
+        if (mar != null) {
+            val altoMar = w.toFloat() * mar.height / mar.width
+            lz.drawBitmap(mar, null, RectF(0f, 0f, w.toFloat(), altoMar), Paint(Paint.FILTER_BITMAP_FLAG))
+            // el papel encima, igual que en la app
+            fun con(a: Float) = android.graphics.Color.argb((255 * a.coerceIn(0f, 1f)).toInt(), android.graphics.Color.red(fondo), android.graphics.Color.green(fondo), android.graphics.Color.blue(fondo))
+            val velo = Paint().apply {
+                shader = android.graphics.LinearGradient(
+                    0f, 0f, 0f, altoMar,
+                    intArrayOf(con(0f), con(papel * 0.45f), con(papel * 0.9f), con(papel), con(1f)),
+                    floatArrayOf(0f, 0.10f, 0.28f, 0.75f, 1f),
+                    android.graphics.Shader.TileMode.CLAMP,
+                )
+            }
+            lz.drawRect(0f, 0f, w.toFloat(), altoMar, velo)
+        }
+        lz.drawBitmap(c, 0f, 0f, Paint(Paint.FILTER_BITMAP_FLAG))
+        val dir = File(ctx.cacheDir, "compartir").apply { mkdirs(); listFiles()?.forEach { it.delete() } }
+        val nombre = b.titulo.trim().ifBlank { "lamina " + formato("d MMM yyyy", b.creado) }
+            .replace(Regex("[\\\\/:*?\"<>|]"), " ").take(60).trim()
+        val f = File(dir, "$nombre.jpg")
+        f.outputStream().use { sal.compress(android.graphics.Bitmap.CompressFormat.JPEG, 93, it) }
+        f
+    }
+    val uri = FileProvider.getUriForFile(ctx, ctx.packageName + ".archivos", archivo)
+    val envio = Intent(Intent.ACTION_SEND).apply {
+        type = "image/jpeg"
         putExtra(Intent.EXTRA_STREAM, uri)
         clipData = ClipData.newRawUri(archivo.name, uri)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

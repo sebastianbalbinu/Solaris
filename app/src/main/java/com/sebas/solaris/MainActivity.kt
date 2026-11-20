@@ -34,6 +34,11 @@ class MainActivity : FragmentActivity() {
         setContent { Solaris(this) }
     }
 
+    override fun onStart() {
+        super.onStart()
+        Sonidos.aLaVista = true
+    }
+
     override fun onResume() {
         super.onResume()
         // al volver: si se dio el permiso de instalar, sigue la actualización; si no, mira si hay marea nueva
@@ -56,6 +61,7 @@ class MainActivity : FragmentActivity() {
     override fun onStop() {
         super.onStop()
         if (isChangingConfigurations) return
+        Sonidos.aLaVista = false
         // La grabación sigue sola (con su notificación); la reproducción se detiene.
         Grabadora.detenerReproduccion()
         com.sebas.solaris.ui.Oleaje.respirando = false

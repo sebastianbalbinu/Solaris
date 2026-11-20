@@ -23,6 +23,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -74,6 +76,10 @@ fun Editor(b: Borrador) {
     var hojaVoces by remember { mutableStateOf(false) }
     var fotoAbierta by remember { mutableStateOf<String?>(null) }
     val ctxEditor = androidx.compose.ui.platform.LocalContext.current
+    val enfoque = androidx.compose.ui.platform.LocalFocusManager.current
+    // la lámina entera se va grabando en una capa: así se puede compartir tal como se ve, de arriba abajo
+    val capa = androidx.compose.ui.graphics.rememberGraphicsLayer()
+    var compartiendo by remember { mutableStateOf(false) }
 
     var cuerpo by remember(b) { mutableStateOf(TextFieldValue(b.texto)) }
     LaunchedEffect(b) {
@@ -145,7 +151,12 @@ fun Editor(b: Borrador) {
                 Redondo(alTocar = { hojaOpciones = true }) { IconoPuntos(p.texto) }
             }
             Column(
-                Modifier.weight(1f).fillMaxWidth().verticalScroll(desplazamiento).padding(horizontal = 24.dp).padding(top = 96.dp, bottom = 120.dp),
+                Modifier.weight(1f).fillMaxWidth().verticalScroll(desplazamiento)
+                    .drawWithContent {
+                        capa.record { this@drawWithContent.drawContent() }
+                        drawLayer(capa)
+                    }
+                    .padding(horizontal = 24.dp).padding(top = 96.dp, bottom = 120.dp),
             ) {
                 val alinear = if (forma.centrado) TextAlign.Center else TextAlign.Start
                 Senal(
@@ -260,7 +271,25 @@ fun Editor(b: Borrador) {
 
         Hoja(hojaOpciones, { hojaOpciones = false }) {
             Text("Esta nota", color = p.texto, fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 17.sp)
-            Pildora("Compartir como PDF", Modifier.fillMaxWidth()) {
+            Pildora(if (compartiendo) "Preparando la lámina…" else "Compartir como imagen", Modifier.fillMaxWidth()) {
+                if (compartiendo) return@Pildora
+                compartiendo = true
+                enfoque.clearFocus()
+                scope.launch {
+                    // un par de cuadros para que se vaya el cursor y la hoja se cierre antes de fotografiar
+                    hojaOpciones = false
+                    delay(450)
+                    try {
+                        val img = capa.toImageBitmap()
+                        compartirImagen(ctxEditor, b, img)
+                    } catch (e: Throwable) {
+                        android.widget.Toast.makeText(ctxEditor, "La lámina es muy larga para una sola imagen. Prueba con PDF.", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                    compartiendo = false
+                }
+            }
+            Parrafo("Tal como la ves: tu diagramación, tus fotos y el mar de este momento detrás.")
+            Pildora("Compartir como PDF", Modifier.fillMaxWidth(), primaria = false) {
                 hojaOpciones = false
                 scope.launch { compartirPdf(ctxEditor, b) }
             }
