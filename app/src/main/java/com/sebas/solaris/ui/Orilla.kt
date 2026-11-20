@@ -9,6 +9,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -64,7 +65,7 @@ fun Orilla() {
     // grabar es sobre el mar abierto: si uno estaba hondo entre los recuerdos, sube a la superficie
     LaunchedEffect(Nav.grabando) { if (Nav.grabando && lista.firstVisibleItemIndex + lista.firstVisibleItemScrollOffset > 0) lista.animateScrollToItem(0) }
     var consulta by remember { mutableStateOf("") }
-    val todos = Casa.registros()
+    val todos = remember(Casa.items) { Casa.registros() }
     val registros = remember(consulta, Casa.items) {
         if (consulta.isBlank()) todos else Casa.buscar(consulta.trim().removePrefix(">").trim())
     }
@@ -78,6 +79,7 @@ fun Orilla() {
             }
         }
     }
+    val hondo by remember { derivedStateOf { hondura > 0.6f } }
     // la profundidad del registro que está arriba: un metro por día
     val metros by remember(registros) {
         derivedStateOf {
@@ -115,7 +117,7 @@ fun Orilla() {
         }
 
         // la profundidad, arriba, mientras uno está hondo
-        if (hondura > 0.6f) {
+        if (hondo) {
             Row(
                 Modifier.statusBarsPadding().padding(horizontal = 24.dp, vertical = 10.dp).graphicsLayer { alpha = ((hondura - 0.6f) / 0.4f).coerceIn(0f, 1f) },
                 verticalAlignment = Alignment.CenterVertically,
@@ -130,51 +132,77 @@ fun Orilla() {
 }
 
 /**
- * Respirar con el mar: mientras el dedo se queda sobre el agua, el mar va más lento y una guía
- * acompaña 4 segundos para tomar aire y 6 para soltarlo. Al soltar, todo vuelve.
+ * Respirar con el mar: se empieza dejando el dedo un momento sobre el agua y luego se suelta.
+ * Un círculo de luz crece mientras se toma aire (4 s) y se encoge mientras se suelta (6 s); el mar va más lento.
+ * Seis respiraciones, o un toque, y todo vuelve.
  */
 @Composable
 private fun Respiracion() {
-    if (!Oleaje.respirando) return
+    val visible = Oleaje.respirando
+    val presencia by androidx.compose.animation.core.animateFloatAsState(if (visible) 1f else 0f, tween(if (visible) 1400 else 900), label = "presencia")
+    if (presencia < 0.001f && !visible) return
     val vista = androidx.compose.ui.platform.LocalView.current
     var fase by remember { mutableStateOf(0f) }
     var inhala by remember { mutableStateOf(true) }
-    LaunchedEffect(Unit) {
+    var segundos by remember { mutableIntStateOf(4) }
+    LaunchedEffect(visible) {
+        if (!visible) return@LaunchedEffect
+        // un respiro de entrada para que el círculo nazca antes de pedir aire
+        fase = 0f; inhala = true; segundos = 4
+        delay(900)
         val inicio = System.currentTimeMillis()
         var antes = true
-        while (isActive) {
-            val s = ((System.currentTimeMillis() - inicio) % 10_000L) / 1000f
+        while (isActive && Oleaje.respirando) {
+            val t = System.currentTimeMillis() - inicio
+            if (t >= 6 * 10_000L) { Oleaje.respirando = false; break }
+            val s = (t % 10_000L) / 1000f
             inhala = s < 4f
             fase = if (inhala) s / 4f else 1f - (s - 4f) / 6f
+            segundos = if (inhala) (4 - s.toInt()).coerceAtLeast(1) else (10 - s.toInt()).coerceAtLeast(1)
             if (inhala != antes) {
                 antes = inhala
                 vista.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
             }
-            delay(33)
+            delay(16)
         }
     }
+    if (visible) androidx.activity.compose.BackHandler { Oleaje.respirando = false }
     val suave = fase * fase * (3 - 2 * fase)
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        // un resplandor en el horizonte que crece al tomar aire y se apaga al soltarlo
-        Canvas(Modifier.fillMaxSize()) {
-            val y = size.height * 0.36f
-            drawRect(
-                Brush.verticalGradient(
-                    0f to Color.Transparent,
-                    (0.36f - 0.06f - 0.12f * suave).coerceAtLeast(0.001f) to Color.Transparent,
-                    0.36f to Azules.Crema.copy(alpha = 0.10f + 0.18f * suave),
-                    (0.36f + 0.05f + 0.10f * suave) to Color.Transparent,
+    Box(
+        Modifier.fillMaxSize().graphicsLayer { alpha = presencia }
+            .clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, null) { Oleaje.respirando = false },
+        contentAlignment = Alignment.Center,
+    ) {
+        // el agua se aquieta y se oscurece un poco para que el círculo se lea
+        Box(Modifier.fillMaxSize().background(Color(0x5502070F)))
+        Canvas(Modifier.size(300.dp)) {
+            val c = center
+            val r = size.minDimension / 2 * (0.42f + 0.5f * suave)
+            drawCircle(
+                Brush.radialGradient(
+                    0f to Azules.Crema.copy(alpha = 0.10f + 0.12f * suave),
+                    0.75f to Azules.Crema.copy(alpha = 0.04f + 0.05f * suave),
                     1f to Color.Transparent,
-                )
+                    center = c, radius = r * 1.35f,
+                ),
+                r * 1.35f, c,
             )
-            drawLine(Azules.Crema.copy(alpha = 0.25f + 0.35f * suave), Offset(size.width * (0.5f - 0.18f - 0.22f * suave), y), Offset(size.width * (0.5f + 0.18f + 0.22f * suave), y), 1.2f * density)
+            drawCircle(Azules.Crema.copy(alpha = 0.55f + 0.3f * suave), r, c, style = androidx.compose.ui.graphics.drawscope.Stroke(1.4f * density))
+            drawCircle(Azules.Crema.copy(alpha = 0.18f), size.minDimension / 2 * 0.42f, c, style = androidx.compose.ui.graphics.drawscope.Stroke(0.8f * density))
         }
-        Column(Modifier.padding(top = 220.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            AnimatedContent(targetState = inhala, transitionSpec = { fadeIn(tween(900)) togetherWith fadeOut(tween(900)) }, label = "respira") { i ->
-                Text(if (i) "toma aire" else "suéltalo", color = Azules.Crema.copy(alpha = 0.85f), fontFamily = Serif, fontStyle = FontStyle.Italic, fontSize = 28.sp)
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            AnimatedContent(targetState = inhala, transitionSpec = { fadeIn(tween(700)) togetherWith fadeOut(tween(700)) }, label = "respira") { i ->
+                Text(if (i) "inhala" else "exhala", color = Azules.Crema, fontFamily = Serif, fontStyle = FontStyle.Italic, fontSize = 32.sp)
             }
-            Spacer(Modifier.height(8.dp))
-            Senal("respirando con el mar", color = Azules.Espuma.copy(alpha = 0.6f))
+            Text(segundos.toString(), color = Azules.Crema.copy(alpha = 0.55f), fontFamily = Mono, fontSize = 13.sp)
+        }
+        Column(
+            Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 56.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Senal("respirando con el mar", color = Azules.Espuma.copy(alpha = 0.7f))
+            Spacer(Modifier.height(6.dp))
+            Text("toca para volver", color = Azules.Espuma.copy(alpha = 0.55f), fontFamily = Sans, fontSize = 13.sp)
         }
     }
 }
@@ -187,16 +215,15 @@ private fun Superficie(modifier: Modifier) {
     val (a, b) = Tema.saludo()
     val vista = androidx.compose.ui.platform.LocalView.current
     Box(modifier.fillMaxWidth().pointerInput(Unit) {
-        // mantener el dedo sobre el mar (sin moverlo) es respirar con él
+        // dejar el dedo un momento sobre el mar (sin moverlo) empieza a respirar con él
         awaitEachGesture {
             awaitFirstDown(requireUnconsumed = false)
             var solto = false
-            withTimeoutOrNull(650) { waitForUpOrCancellation(); solto = true }
-            if (!solto) {
+            // si se suelta o se desliza antes, no es respirar: es tocar o recordar
+            withTimeoutOrNull(500) { waitForUpOrCancellation(); solto = true }
+            if (!solto && !Oleaje.respirando) {
                 Oleaje.respirando = true
                 vista.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
-                waitForUpOrCancellation()
-                Oleaje.respirando = false
             }
         }
     }) {
@@ -230,7 +257,7 @@ private fun Superficie(modifier: Modifier) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                "deja el dedo sobre el mar para respirar · desliza para recordar", color = Azules.Espuma, fontFamily = Sans, fontSize = 13.sp,
+                "mantén el dedo sobre el mar para respirar · desliza para recordar", color = Azules.Espuma, fontFamily = Sans, fontSize = 13.sp,
                 style = TextStyle(shadow = androidx.compose.ui.graphics.Shadow(Color(0xCC02070F), Offset(0f, 1f), 10f)),
             )
             Spacer(Modifier.height(6.dp))

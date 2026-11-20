@@ -24,6 +24,16 @@ data class Item(
     val dur: Long = 0,
     /** Cómo va pegada cada foto en la lámina: "tamaño,giro" (tamaño 0 pequeña, 1 mediana, 2 grande; giro en grados). */
     val estilos: Map<String, String> = emptyMap(),
+    /** Pie de cada foto (lo que se escribe debajo, en cursiva). */
+    val pies: Map<String, String> = emptyMap(),
+    /** Texto al lado de cada foto, cuando va diagramada como revista. */
+    val lados: Map<String, String> = emptyMap(),
+    /** Cómo va la lámina: "centro", "poema", "capitular" (separados por coma). */
+    val forma: String = "",
+    /** Voces pegadas en la nota (ids de cintas). */
+    val voces: List<String> = emptyList(),
+    /** Cómo estaba el Drake cuando se escribió. */
+    val sello: String = "",
 ) {
     val esEntrada: Boolean get() = kind == "entrada"
     val esCuarto: Boolean get() = kind == "cuarto"
@@ -52,6 +62,11 @@ data class Item(
         .put("deleted", deleted)
         .put("dur", dur)
         .put("estilos", JSONObject(estilos))
+        .put("pies", JSONObject(pies))
+        .put("lados", JSONObject(lados))
+        .put("forma", forma)
+        .put("voces", JSONArray(voces))
+        .put("sello", sello)
 
     companion object {
         fun nuevoId(): String = UUID.randomUUID().toString()
@@ -70,9 +85,17 @@ data class Item(
                 updated = o.optLong("updated"),
                 deleted = o.optBoolean("deleted"),
                 dur = o.optLong("dur"),
-                estilos = o.optJSONObject("estilos")?.let { e -> e.keys().asSequence().associateWith { e.optString(it) } } ?: emptyMap(),
+                estilos = mapa(o, "estilos"),
+                pies = mapa(o, "pies"),
+                lados = mapa(o, "lados"),
+                forma = o.optString("forma"),
+                voces = o.optJSONArray("voces")?.let { v -> (0 until v.length()).map { v.getString(it) } } ?: emptyList(),
+                sello = o.optString("sello"),
             )
         }
+
+        private fun mapa(o: JSONObject, k: String): Map<String, String> =
+            o.optJSONObject(k)?.let { e -> e.keys().asSequence().associateWith { e.optString(it) } } ?: emptyMap()
 
         fun cuarto(nombre: String, color: Int, cuando: Long = System.currentTimeMillis()) = Item(
             id = nuevoId(), kind = "cuarto", room = null, title = nombre, text = "",
@@ -81,16 +104,38 @@ data class Item(
     }
 }
 
+/** Cómo va la lámina entera: alineación, modo poema y letra capitular. */
+data class Forma(val centro: Boolean = false, val poema: Boolean = false, val capitular: Boolean = false) {
+    fun texto() = listOfNotNull("centro".takeIf { centro }, "poema".takeIf { poema }, "capitular".takeIf { capitular }).joinToString(",")
+    /** El poema siempre va centrado. */
+    val centrado: Boolean get() = centro || poema
+    companion object {
+        fun de(s: String?): Forma {
+            val f = s?.split(",")?.map { it.trim() }?.toSet() ?: emptySet()
+            return Forma("centro" in f, "poema" in f, "capitular" in f)
+        }
+    }
+}
+
 /** Cómo va pegada una foto: su tamaño y un giro leve, como si se hubiera pegado a mano. */
-data class EstiloFoto(val tam: Int, val giro: Float) {
-    fun texto() = "$tam," + String.format(java.util.Locale.US, "%.1f", giro)
+data class EstiloFoto(val tam: Int, val giro: Float, val pos: Int = SOLA) {
+    fun texto() = "$tam," + String.format(java.util.Locale.US, "%.1f", giro) + ",$pos"
+    /** Va al lado del texto, como en una revista. */
+    val alLado: Boolean get() = pos != SOLA
     val ancho: Float get() = when (tam) { 0 -> 0.48f; 2 -> 1f; else -> 0.7f }
 
     companion object {
         fun de(s: String?): EstiloFoto {
             val p = s?.split(",") ?: return EstiloFoto(1, 0f)
-            return EstiloFoto(p.getOrNull(0)?.toIntOrNull()?.coerceIn(0, 2) ?: 1, p.getOrNull(1)?.toFloatOrNull()?.coerceIn(-10f, 10f) ?: 0f)
+            return EstiloFoto(
+                p.getOrNull(0)?.toIntOrNull()?.coerceIn(0, 2) ?: 1,
+                p.getOrNull(1)?.toFloatOrNull()?.coerceIn(-10f, 10f) ?: 0f,
+                p.getOrNull(2)?.toIntOrNull()?.coerceIn(0, 2) ?: SOLA,
+            )
         }
+        const val SOLA = 0
+        const val IZQUIERDA = 1
+        const val DERECHA = 2
 
         /** Una foto recién pegada: mediana y un poco chueca. */
         fun nueva() = EstiloFoto(1, (kotlin.random.Random.nextFloat() * 5f - 2.5f))

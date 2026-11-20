@@ -39,6 +39,11 @@ class Borrador(id: String?, cuarto: String?, val abrirFoto: Boolean = false) {
     var cuarto by mutableStateOf(cuarto)
     var fotos by mutableStateOf(listOf<String>())
     var estilos by mutableStateOf(mapOf<String, String>())
+    var pies by mutableStateOf(mapOf<String, String>())
+    var lados by mutableStateOf(mapOf<String, String>())
+    var forma by mutableStateOf("")
+    var voces by mutableStateOf(listOf<String>())
+    var sello = ""
     val fotosNuevas = mutableListOf<String>()
     var creado: Long = System.currentTimeMillis()
     var cargado = id == null
@@ -225,8 +230,11 @@ object Casa {
     fun terminarInstalacion(huella: Boolean) {
         prefs.edit().putBoolean("lista", true).putBoolean("huella", huella).apply()
         lista = true
-        abrirConCelular()
+        abrirAlFondo()
     }
+
+    /** Abre sin trabar la pantalla: descifrar todo pasa lejos del hilo que dibuja el mar. */
+    fun abrirAlFondo() { scope.launch { abrirConCelular() } }
 
     /** true si el PIN es correcto (y abre la casa). */
     suspend fun probarPin(pin: String): Boolean {
@@ -244,11 +252,14 @@ object Casa {
     }
 
     /** Abre con la llave guardada en el celular (después del PIN o la huella). */
-    fun abrirConCelular(): Boolean {
+    suspend fun abrirConCelular(): Boolean {
         return try {
             val guardada = prefs.getString("maestra", null) ?: return false
-            maestra = LlaveDelCelular.abrir(Crypto.deB64(guardada))
-            cargarTodo()
+            val todo = withContext(Dispatchers.Default) {
+                maestra = LlaveDelCelular.abrir(Crypto.deB64(guardada))
+                leerTodo()
+            }
+            items = todo
             abierta = true
             sincronizar()
             true
@@ -272,7 +283,7 @@ object Casa {
         } ?: return false
         prefs.edit().putString("maestra", Crypto.b64(LlaveDelCelular.sellar(m))).putInt("pin_fallos", 0).apply()
         maestra = m
-        cargarTodo()
+        items = withContext(Dispatchers.Default) { leerTodo() }
         abierta = true
         sincronizar()
         return true
@@ -305,9 +316,9 @@ object Casa {
 
     // ---------------- páginas y habitaciones ----------------
 
-    private fun cargarTodo() {
-        val m = maestra ?: return
-        items = dirItems.listFiles()?.mapNotNull { f ->
+    private fun leerTodo(): List<Item> {
+        val m = maestra ?: return emptyList()
+        return dirItems.listFiles()?.mapNotNull { f ->
             try {
                 Item.de(JSONObject(String(Crypto.abrir(m, f.readBytes()), Charsets.UTF_8)))
             } catch (e: Exception) {
@@ -342,8 +353,11 @@ object Casa {
         olvidarFotos(b.fotosNuevas.filter { it !in b.fotos })
         b.fotosNuevas.retainAll(b.fotos)
         val previo = b.id?.let { porId(it) }
+        val pies = b.pies.filter { it.key in b.fotos && it.value.isNotBlank() }
+        val lados = b.lados.filter { it.key in b.fotos && it.value.isNotBlank() }
         if (previo != null && previo.title == b.titulo.trim() && previo.text == b.texto &&
-            previo.room == b.cuarto && previo.photos == b.fotos && previo.estilos == b.estilos.filterKeys { it in b.fotos }
+            previo.room == b.cuarto && previo.photos == b.fotos && previo.estilos == b.estilos.filterKeys { it in b.fotos } &&
+            previo.pies == pies && previo.lados == lados && previo.forma == b.forma && previo.voces == b.voces
         ) return
         val ahora = System.currentTimeMillis()
         previo?.photos?.filter { it !in b.fotos }?.let { olvidarFotos(it) }
@@ -360,6 +374,11 @@ object Casa {
                 created = previo?.created ?: b.creado,
                 updated = ahora,
                 estilos = b.estilos.filterKeys { it in b.fotos },
+                pies = pies,
+                lados = lados,
+                forma = b.forma,
+                voces = b.voces,
+                sello = previo?.sello ?: b.sello,
             )
         )
     }

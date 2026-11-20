@@ -15,7 +15,10 @@ import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.StaticLayout
 import android.text.TextPaint
+import android.text.style.AlignmentSpan
 import android.text.style.ForegroundColorSpan
+import android.text.style.RelativeSizeSpan
+import android.text.style.StrikethroughSpan
 import android.text.style.LeadingMarginSpan
 import android.text.style.StyleSpan
 import android.text.style.TypefaceSpan
@@ -38,59 +41,11 @@ import androidx.core.content.res.ResourcesCompat
 import com.sebas.solaris.Borrador
 import com.sebas.solaris.Casa
 import com.sebas.solaris.EstiloFoto
+import com.sebas.solaris.Forma
 import com.sebas.solaris.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
-
-/** El papel de las fotos pegadas: un crema claro, como el borde de una copia. */
-private val Borde = Color(0xFFF7F2E8)
-/** La cinta que las sostiene. */
-private val Cinta = Color(0x8CE9DFC9)
-
-/**
- * Una foto pegada a la lámina: con borde de papel, un trozo de cinta arriba, su tamaño y un giro leve.
- * Las pares se recuestan a la izquierda y las impares a la derecha, como en un cuaderno.
- */
-@Composable
-fun FotoPegada(id: String, estilo: EstiloFoto, indice: Int, alTocar: () -> Unit) {
-    val bmp by produceState<Bitmap?>(Casa.fotoEnCache(id, 900), id) {
-        if (value == null) value = Casa.foto(id, 900)
-    }
-    val alineacion = when {
-        estilo.tam == 2 -> Alignment.Center
-        indice % 2 == 0 -> Alignment.CenterStart
-        else -> Alignment.CenterEnd
-    }
-    Box(Modifier.fillMaxWidth(), contentAlignment = alineacion) {
-        // todo gira junto: el papel, la foto y la cinta
-        Box(
-            Modifier.fillMaxWidth(estilo.ancho)
-                .padding(horizontal = 6.dp, vertical = 12.dp)
-                .graphicsLayer { rotationZ = estilo.giro }
-                .clickable(remember { MutableInteractionSource() }, null) { alTocar() },
-        ) {
-            Box(
-                Modifier.graphicsLayer { shadowElevation = 6.dp.toPx() }
-                    .background(Borde)
-                    .padding(start = 7.dp, end = 7.dp, top = 7.dp, bottom = 9.dp),
-            ) {
-                val b = bmp
-                val proporcion = if (b != null && b.height > 0) b.width.toFloat() / b.height else 0.8f
-                Box(Modifier.fillMaxWidth().aspectRatio(proporcion.coerceIn(0.5f, 2f)).background(Color(0xFFE6DED0))) {
-                    if (b != null) Image(b.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                }
-            }
-            // la cinta que la sostiene, un poco chueca
-            Box(
-                Modifier.align(Alignment.TopCenter).offset(y = (-8).dp)
-                    .graphicsLayer { rotationZ = -3f }
-                    .size(width = 58.dp, height = 18.dp)
-                    .background(Cinta),
-            )
-        }
-    }
-}
 
 // ---------------- la lámina en PDF ----------------
 
@@ -117,6 +72,8 @@ private suspend fun pdf(ctx: Context, b: Borrador): File? {
     val sansFuerte = ResourcesCompat.getFont(ctx, R.font.sans_semibold) ?: Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
     val serif = ResourcesCompat.getFont(ctx, R.font.instrument_serif) ?: Typeface.SERIF
     val mono = ResourcesCompat.getFont(ctx, R.font.plex_mono) ?: Typeface.MONOSPACE
+    val forma = Forma.de(b.forma)
+    val alineacion = if (forma.centrado) Layout.Alignment.ALIGN_CENTER else Layout.Alignment.ALIGN_NORMAL
 
     val doc = PdfDocument()
     var numero = 0
@@ -134,70 +91,138 @@ private suspend fun pdf(ctx: Context, b: Borrador): File? {
     }
     nuevaPagina()
 
-    // el encabezado: el día de la bitácora y la hora
-    val pMono = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = mono; textSize = 7f; color = p.texto2.toArgb(); letterSpacing = 0.12f }
-    val encabezado = ("Día " + Casa.diaDeBitacora(b.creado) + " · " + formato("d MMM yyyy · HH:mm", b.creado)).uppercase()
-    lienzo!!.drawText(encabezado, margen, y + 7f, pMono)
-    y += 22f
-
-    if (b.titulo.isNotBlank()) {
-        val pTitulo = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = serif; textSize = 24f; color = p.texto.toArgb() }
-        val l = StaticLayout.Builder.obtain(b.titulo.trim(), 0, b.titulo.trim().length, pTitulo, ancho.toInt()).setLineSpacing(0f, 1.05f).build()
-        lienzo!!.save(); lienzo!!.translate(margen, y); l.draw(lienzo!!); lienzo!!.restore()
-        y += l.height + 14f
-    }
-
-    // las fotos pegadas
-    b.fotos.forEachIndexed { i, id ->
-        val bmp = Casa.foto(id, 1200) ?: return@forEachIndexed
-        val est = EstiloFoto.de(b.estilos[id])
-        val w = ancho * est.ancho - 12f
-        val h = w * bmp.height / bmp.width.coerceAtLeast(1)
-        val marco = 6f
-        if (y + h + marco * 2 + 16f > altoPag - margen) nuevaPagina()
-        val x0 = when {
-            est.tam == 2 -> margen + (ancho - w) / 2
-            i % 2 == 0 -> margen + 6f
-            else -> margen + ancho - w - 6f
-        }
-        val c = lienzo!!
-        c.save()
-        c.rotate(est.giro, x0 + w / 2, y + 8f + h / 2)
-        val sombra = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x22000000 }
-        c.drawRect(RectF(x0 - marco + 1.5f, y + 8f - marco + 2.5f, x0 + w + marco + 1.5f, y + 8f + h + marco * 1.3f + 2.5f), sombra)
-        c.drawRect(RectF(x0 - marco, y + 8f - marco, x0 + w + marco, y + 8f + h + marco * 1.3f), Paint().apply { color = Borde.toArgb() })
-        c.drawBitmap(bmp, null, RectF(x0, y + 8f, x0 + w, y + 8f + h), Paint(Paint.FILTER_BITMAP_FLAG))
-        c.rotate(-3f, x0 + w / 2, y + 8f)
-        c.drawRect(RectF(x0 + w / 2 - 22f, y + 8f - marco - 5f, x0 + w / 2 + 22f, y + 8f - marco + 7f), Paint().apply { color = Cinta.toArgb() })
-        c.restore()
-        y += h + marco * 2 + 22f
-    }
-
-    // el cuerpo, con su formato sencillo
-    if (b.texto.isNotBlank()) {
-        val tam = Tema.tamanoLetra * 0.66f
-        val pCuerpo = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = sans; textSize = tam; color = Tema.colorLetra.toArgb() }
-        val texto = conFormato(b.texto, sansFuerte, p.texto2.toArgb(), tam)
-        val l = StaticLayout.Builder.obtain(texto, 0, texto.length, pCuerpo, ancho.toInt())
-            .setLineSpacing(0f, 1.5f).setAlignment(Layout.Alignment.ALIGN_NORMAL).build()
-        y += 6f
+    /** Dibuja un texto ya armado, partiéndolo entre páginas si hace falta. */
+    fun dibujar(l: StaticLayout, x: Float = margen) {
         var linea = 0
         while (linea < l.lineCount) {
-            // cuántas líneas caben en lo que queda de esta página
             val disponible = altoPag - margen - y
             var fin = linea
             while (fin < l.lineCount && l.getLineBottom(fin) - l.getLineTop(linea) <= disponible) fin++
             if (fin == linea) { nuevaPagina(); continue }
             val c = lienzo!!
             c.save()
-            c.translate(margen, y - l.getLineTop(linea))
-            c.clipRect(0f, l.getLineTop(linea).toFloat(), ancho, l.getLineBottom(fin - 1).toFloat())
+            c.translate(x, y - l.getLineTop(linea))
+            c.clipRect(0f, l.getLineTop(linea).toFloat(), l.width.toFloat(), l.getLineBottom(fin - 1).toFloat())
             l.draw(c)
             c.restore()
             y += l.getLineBottom(fin - 1) - l.getLineTop(linea)
             linea = fin
             if (linea < l.lineCount) nuevaPagina()
         }
+    }
+    fun armar(t: CharSequence, paint: TextPaint, w: Float, al: Layout.Alignment = alineacion, espacio: Float = 1.5f) =
+        StaticLayout.Builder.obtain(t, 0, t.length, paint, w.toInt()).setLineSpacing(0f, espacio).setAlignment(al).build()
+
+    // el encabezado: el día de la bitácora y la hora
+    val pMono = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = mono; textSize = 7f; color = p.texto2.toArgb(); letterSpacing = 0.12f }
+    val encabezado = ("Día " + Casa.diaDeBitacora(b.creado) + " · " + formato("d MMM yyyy · HH:mm", b.creado)).uppercase()
+    lienzo!!.drawText(encabezado, if (forma.centrado) margen + (ancho - pMono.measureText(encabezado)) / 2 else margen, y + 7f, pMono)
+    y += 22f
+
+    if (b.titulo.isNotBlank()) {
+        val pTitulo = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = serif; textSize = 24f; color = p.texto.toArgb() }
+        val l = armar(b.titulo.trim(), pTitulo, ancho, espacio = 1.05f)
+        dibujar(l)
+        y += 14f
+    }
+
+    val tam = Tema.tamanoLetra * 0.66f
+    val pCuerpo = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        typeface = if (forma.poema) serif else sans
+        textSize = if (forma.poema) tam * 1.12f else tam
+        color = Tema.colorLetra.toArgb()
+    }
+    val pLado = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = sans; textSize = tam * 0.92f; color = Tema.colorLetra.toArgb() }
+    val pPie = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        typeface = Typeface.create(serif, Typeface.ITALIC); textSize = 8.5f; color = TintaPie.toArgb()
+    }
+
+    /** Una foto en su papel, con su cinta y su pie. Devuelve el alto que ocupa. */
+    fun papel(c: Canvas, bmp: android.graphics.Bitmap, x0: Float, y0: Float, w: Float, giro: Float, pie: String): Float {
+        val h = w * bmp.height / bmp.width.coerceAtLeast(1)
+        val marco = 6f
+        val lPie = if (pie.isBlank()) null else armar(pie.trim(), pPie, w, Layout.Alignment.ALIGN_CENTER, 1.1f)
+        val extra = if (lPie != null) lPie.height + 7f else 0f
+        c.save()
+        c.rotate(giro, x0 + w / 2, y0 + 8f + h / 2)
+        val sombra = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x22000000 }
+        c.drawRect(RectF(x0 - marco + 1.5f, y0 + 8f - marco + 2.5f, x0 + w + marco + 1.5f, y0 + 8f + h + marco * 1.3f + extra + 2.5f), sombra)
+        c.drawRect(RectF(x0 - marco, y0 + 8f - marco, x0 + w + marco, y0 + 8f + h + marco * 1.3f + extra), Paint().apply { color = BordeFoto.toArgb() })
+        c.drawBitmap(bmp, null, RectF(x0, y0 + 8f, x0 + w, y0 + 8f + h), Paint(Paint.FILTER_BITMAP_FLAG))
+        if (lPie != null) { c.save(); c.translate(x0, y0 + 8f + h + 6f); lPie.draw(c); c.restore() }
+        c.rotate(-3f, x0 + w / 2, y0 + 8f)
+        c.drawRect(RectF(x0 + w / 2 - 22f, y0 + 8f - marco - 5f, x0 + w / 2 + 22f, y0 + 8f - marco + 7f), Paint().apply { color = CintaFoto.toArgb() })
+        c.restore()
+        return h + marco * 2 + extra + 16f
+    }
+
+    // las fotos pegadas
+    b.fotos.forEachIndexed { i, id ->
+        val bmp = Casa.foto(id, 1200) ?: return@forEachIndexed
+        val est = EstiloFoto.de(b.estilos[id])
+        val pie = b.pies[id] ?: ""
+        if (!est.alLado) {
+            val w = ancho * est.ancho - 12f
+            val h = w * bmp.height / bmp.width.coerceAtLeast(1)
+            if (y + h + 40f > altoPag - margen) nuevaPagina()
+            val x0 = when {
+                est.tam == 2 -> margen + (ancho - w) / 2
+                i % 2 == 0 -> margen + 6f
+                else -> margen + ancho - w - 6f
+            }
+            y += papel(lienzo!!, bmp, x0, y, w, est.giro, pie) + 6f
+        } else {
+            // diagramada: la foto a un lado y su texto rodeándola
+            val w = ancho * 0.48f - 12f
+            val h = w * bmp.height / bmp.width.coerceAtLeast(1)
+            if (y + h + 40f > altoPag - margen) nuevaPagina()
+            val derecha = est.pos == EstiloFoto.DERECHA
+            val x0 = if (derecha) margen + ancho - w - 6f else margen + 6f
+            val altoFoto = papel(lienzo!!, bmp, x0, y, w, est.giro * 0.5f, pie)
+            val texto = (b.lados[id] ?: "").trim()
+            val anchoLado = ancho * 0.52f - 12f
+            var resto = ""
+            if (texto.isNotEmpty()) {
+                val l = armar(texto, pLado, anchoLado, Layout.Alignment.ALIGN_NORMAL, 1.4f)
+                var ultima = -1
+                for (k in 0 until l.lineCount) if (l.getLineBottom(k) + 10f <= altoFoto) ultima = k
+                if (ultima >= 0) {
+                    val c = lienzo!!
+                    c.save()
+                    c.translate(if (derecha) margen else margen + ancho - anchoLado, y + 10f)
+                    c.clipRect(0f, 0f, anchoLado, l.getLineBottom(ultima).toFloat())
+                    l.draw(c)
+                    c.restore()
+                }
+                resto = if (ultima == l.lineCount - 1) "" else texto.substring(if (ultima < 0) 0 else l.getLineEnd(ultima)).trim()
+            }
+            y += altoFoto + 4f
+            if (resto.isNotEmpty()) { dibujar(armar(resto, pLado, ancho, Layout.Alignment.ALIGN_NORMAL, 1.4f)); y += 10f }
+        }
+    }
+
+    // las voces pegadas: en papel no suenan, pero quedan nombradas
+    val voces = b.voces.mapNotNull { Casa.porId(it) }
+    if (voces.isNotEmpty()) {
+        y += 4f
+        val pVoz = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = mono; textSize = 7.5f; color = p.texto2.toArgb(); letterSpacing = 0.08f }
+        voces.forEach { v ->
+            val linea = "▶  " + (if (v.esRumor) "RUMOR" else "VOZ") + " · " + v.title.ifBlank { "sin nombre" } + " · " + duracion(v.dur)
+            dibujar(armar(linea, pVoz, ancho, espacio = 1.3f))
+            y += 4f
+        }
+    }
+
+    // el cuerpo, con su formato
+    if (b.texto.isNotBlank()) {
+        y += 6f
+        dibujar(armar(conFormato(b.texto, sansFuerte, serif, p.texto2.toArgb(), p.acento.toArgb(), tam, forma.capitular), pCuerpo, ancho, espacio = if (forma.poema) 1.8f else 1.5f))
+    }
+
+    // el sello del mar
+    if (b.sello.isNotBlank()) {
+        y += 18f
+        dibujar(armar("—  " + b.sello.uppercase(), pMono, ancho, espacio = 1.2f))
     }
 
     pagina?.let { doc.finishPage(it) }
@@ -215,36 +240,68 @@ private suspend fun pdf(ctx: Context, b: Borrador): File? {
     }
 }
 
-/** **negrita**, listas con "- " y citas con "> ", como en el cuaderno. */
-private fun conFormato(texto: String, fuerte: Typeface, gris: Int, tam: Float): CharSequence {
+private fun tipo(sb: SpannableStringBuilder, t: Typeface, estilo: Int, a: Int, z: Int) {
+    if (Build.VERSION.SDK_INT >= 28) sb.setSpan(TypefaceSpan(t), a, z, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    else sb.setSpan(StyleSpan(estilo), a, z, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+}
+
+/** El formato del cuaderno en papel: negrita, tachado, listas, citas, citas destacadas, olas y capitular. */
+private fun conFormato(texto: String, fuerte: Typeface, serif: Typeface, gris: Int, acento: Int, tam: Float, capitular: Boolean): CharSequence {
     val sb = SpannableStringBuilder()
+    var primera = true
     texto.lines().forEachIndexed { i, linea0 ->
         if (i > 0) sb.append('\n')
         var linea = linea0
         val inicio = sb.length
         var cita = false
         var lista = false
+        var destacada = false
+        if (linea.trim() == "~~~") {
+            sb.append("∿ ∿ ∿ ∿ ∿")
+            sb.setSpan(ForegroundColorSpan(acento), inicio, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            sb.setSpan(AlignmentSpan.Standard(Layout.Alignment.ALIGN_CENTER), inicio, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            return@forEachIndexed
+        }
         when {
             linea.startsWith("> ") -> { linea = linea.removePrefix("> "); cita = true }
+            linea.startsWith("» ") -> { linea = linea.removePrefix("» "); destacada = true }
             linea.startsWith("- ") -> { linea = "•  " + linea.removePrefix("- "); lista = true }
         }
-        // negritas
-        var resto = linea
-        while (true) {
-            val a = resto.indexOf("**")
-            val bb = if (a >= 0) resto.indexOf("**", a + 2) else -1
-            if (a < 0 || bb < 0) { sb.append(resto); break }
-            sb.append(resto.substring(0, a))
+        // negritas y tachados
+        val marca = Regex("\\*\\*([^*\\n]+)\\*\\*|(?<!~)~~([^~\\n]+)~~(?!~)")
+        var desde = 0
+        marca.findAll(linea).forEach { m ->
+            sb.append(linea.substring(desde, m.range.first))
             val s0 = sb.length
-            sb.append(resto.substring(a + 2, bb))
-            if (Build.VERSION.SDK_INT >= 28) sb.setSpan(TypefaceSpan(fuerte), s0, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            else sb.setSpan(StyleSpan(Typeface.BOLD), s0, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            resto = resto.substring(bb + 2)
+            if (m.groupValues[1].isNotEmpty()) {
+                sb.append(m.groupValues[1]); tipo(sb, fuerte, Typeface.BOLD, s0, sb.length)
+            } else {
+                sb.append(m.groupValues[2])
+                sb.setSpan(StrikethroughSpan(), s0, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                sb.setSpan(ForegroundColorSpan(gris), s0, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+            desde = m.range.last + 1
         }
+        sb.append(linea.substring(desde))
+        if (capitular && primera && !cita && !destacada && !lista && linea.isNotBlank()) {
+            val k = linea.indexOfFirst { it.isLetterOrDigit() }
+            if (k >= 0) {
+                sb.setSpan(RelativeSizeSpan(2.7f), inicio + k, inicio + k + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                sb.setSpan(ForegroundColorSpan(acento), inicio + k, inicio + k + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                tipo(sb, serif, Typeface.NORMAL, inicio + k, inicio + k + 1)
+            }
+        }
+        if (linea.isNotBlank()) primera = false
         if (cita) {
             sb.setSpan(StyleSpan(Typeface.ITALIC), inicio, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             sb.setSpan(ForegroundColorSpan(gris), inicio, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             sb.setSpan(LeadingMarginSpan.Standard((tam * 1.2f).toInt()), inicio, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        if (destacada) {
+            tipo(sb, Typeface.create(serif, Typeface.ITALIC), Typeface.ITALIC, inicio, sb.length)
+            sb.setSpan(RelativeSizeSpan(1.45f), inicio, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            sb.setSpan(ForegroundColorSpan(acento), inicio, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            sb.setSpan(AlignmentSpan.Standard(Layout.Alignment.ALIGN_CENTER), inicio, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
         if (lista) sb.setSpan(LeadingMarginSpan.Standard(0, (tam * 1.1f).toInt()), inicio, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
     }

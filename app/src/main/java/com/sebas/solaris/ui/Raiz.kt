@@ -103,13 +103,22 @@ fun Solaris(act: MainActivity) {
         if (enCasa) {
             val enSuperficie = Nav.listaOrilla.firstVisibleItemIndex == 0
             MarCianotipo(Modifier.fillMaxSize(), vivo = !Casa.abierta || Nav.borrador != null || (!encima && enSuperficie))
+            // los velos de la llegada no desaparecen de golpe al abrir: se retiran despacio, como la marea
+            val velo by animateFloatAsState(
+                if (Casa.abierta) 0f else 1f,
+                tween(if (Casa.abierta) 2600 else 500, easing = FastOutSlowInEasing), label = "velo",
+            )
+            if (velo > 0.002f) Box(Modifier.fillMaxSize().graphicsLayer { alpha = velo }) {
+                Box(Modifier.fillMaxWidth().height(220.dp).background(Brush.verticalGradient(listOf(Color(0xAA02070F), Color.Transparent))))
+                Box(Modifier.fillMaxWidth().fillMaxHeight(0.55f).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC02070F)))))
+            }
         }
         when {
             !Casa.conectada -> Conectar()
             !Casa.lista -> Bienvenida(act)
             else -> AnimatedContent(
                 targetState = Casa.abierta,
-                transitionSpec = { fadeIn(tween(900)) togetherWith fadeOut(tween(700)) },
+                transitionSpec = { fadeIn(tween(1100, delayMillis = 150)) togetherWith fadeOut(tween(900)) },
                 label = "llegada",
             ) { abierta -> if (abierta) Interior() else Entrada(act) }
         }
@@ -139,7 +148,7 @@ fun Entrada(act: MainActivity) {
     }
     LaunchedEffect(Unit) {
         listOf(700L, 800L, 800L, 800L, 900L).forEach { delay(it); paso++ }
-        if (conHuella && !pinVisible) Huella.pedir(act) { Casa.abrirConCelular() }
+        if (conHuella && !pinVisible) Huella.pedir(act) { Casa.abrirAlFondo() }
     }
     val e = (1 - Math.pow(1 - llegada, 3.0)).toFloat()
 
@@ -154,9 +163,6 @@ fun Entrada(act: MainActivity) {
                 1f to Color.Transparent,
             )
         ))
-        Box(Modifier.fillMaxWidth().height(220.dp).background(Brush.verticalGradient(listOf(Color(0xAA02070F), Color.Transparent))))
-        Box(Modifier.fillMaxWidth().fillMaxHeight(0.55f).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC02070F)))))
-
         Column(Modifier.statusBarsPadding().padding(horizontal = 24.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Senal("Estación Solaris · alta mar", color = Azules.Espuma)
             Senal(Clima.LUGAR, color = Azules.Bruma)
@@ -191,7 +197,7 @@ fun Entrada(act: MainActivity) {
                 if (visible) {
                     if (conHuella) {
                         Box(
-                            Modifier.presionable { Sonidos.tic(); Huella.pedir(act) { Casa.abrirConCelular() } }
+                            Modifier.presionable { Sonidos.tic(); Huella.pedir(act) { Casa.abrirAlFondo() } }
                                 .graphicsLayer { alpha = alfa }.size(72.dp).clip(CircleShape).background(Color(0x33B9C6CC)),
                             contentAlignment = Alignment.Center,
                         ) { IconoHuella(Azules.Crema) }
