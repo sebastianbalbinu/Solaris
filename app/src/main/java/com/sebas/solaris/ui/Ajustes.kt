@@ -68,6 +68,7 @@ fun Ajustes() {
                 FilaAccion("Letra, papel y modo") { letra = true }
                 Fila("Modo", when (Tema.modo) { "dia" -> "Día"; "noche" -> "Noche"; else -> "Según la hora" })
                 Fila("Papel de día", NombresPapel[Tema.papel.coerceIn(0, 2)])
+                Fila("De noche", NombresOscuro[Tema.oscuro.coerceIn(0, 1)])
             }
             Grupo("Cintas") {
                 FilaAccion("Exportar todas a una carpeta") { Casa.pausarCandado = true; carpeta.launch(null) }
@@ -80,7 +81,7 @@ fun Ajustes() {
                         Switch(
                             checked = huella,
                             onCheckedChange = { huella = it; Casa.usarHuella(it); Sonidos.tic() },
-                            colors = SwitchDefaults.colors(checkedTrackColor = Color(0xFF34C759), checkedThumbColor = Color.White),
+                            colors = SwitchDefaults.colors(checkedTrackColor = Azules.Cianotipo, checkedThumbColor = Color.White),
                         )
                     }
                 }

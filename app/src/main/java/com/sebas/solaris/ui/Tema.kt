@@ -39,46 +39,86 @@ data class Paleta(
     val boton: Color,
     val botonTexto: Color,
     val coloresLetra: List<Color>,
+    /** Fondo de las hojas que suben desde abajo. */
+    val hoja: Color,
+    /** Fondo del segmento elegido en los selectores. */
+    val seleccion: Color,
 )
 
-/** Un papel de día: el texto nunca es negro puro, para que la página no deslumbre. */
-private fun papelDeDia(fondo: Long, superficie: Long, linea: Long, tinta: Long, texto2: Long) = Paleta(
+/** Los azules de Solaris, del abismo a la espuma, y el crema como único cálido. */
+object Azules {
+    val Abismo = Color(0xFF02070F)
+    val Hondo = Color(0xFF061A2B)
+    val Noche = Color(0xFF0B2A40)
+    val Prusia = Color(0xFF123B57)
+    val Cianotipo = Color(0xFF1F4E6E)
+    val Niebla = Color(0xFF5F7F96)
+    val Bruma = Color(0xFF7E9BB0)
+    val Hielo = Color(0xFF9FC3DA)
+    val Espuma = Color(0xFFB9C6CC)
+    val Crema = Color(0xFFEDE3CF)
+}
+
+/** Un papel de día: crema con tinta azul, nunca negro puro. */
+private fun papelDeDia(fondo: Long, superficie: Long, linea: Long, hoja: Long) = Paleta(
     fondo = Color(fondo),
     superficie = Color(superficie),
-    texto = Color(tinta),
-    texto2 = Color(texto2),
+    texto = Color(0xFF12304A),
+    texto2 = Color(0xFF5B6E80),
     linea = Color(linea),
-    acento = Color(0xFF2F5D5A),
-    boton = Color(tinta),
+    acento = Color(0xFF1F4E6E),
+    boton = Color(0xFF12304A),
     botonTexto = Color(fondo),
-    coloresLetra = listOf(Color(tinta), Color(0xFF5B4636), Color(0xFF2F4A5C), Color(0xFF2F5D5A)),
+    coloresLetra = listOf(Color(0xFF12304A), Color(0xFF1F4E6E), Color(0xFF2B2F35), Color(0xFF5B4636)),
+    hoja = Color(hoja),
+    seleccion = Color(fondo),
 )
 
 /** Claro: para leer bajo el sol. */
-val DiaClaro = papelDeDia(0xFFF3E9D8, 0xFFE9DDC8, 0xFFE0D2BB, 0xFF1F1C19, 0xFF6F6555)
+val DiaClaro = papelDeDia(0xFFF3EADB, 0xFFE9DFCD, 0xFFDDD2BE, 0xFFF8F1E5)
 /** Tibio: papel de libro viejo, el de todos los días. */
-val DiaTibio = papelDeDia(0xFFE6DCCA, 0xFFDACDB7, 0xFFD2C4AC, 0xFF2A251F, 0xFF6A604F)
-/** Penumbra: crema oscuro para leer de noche sin pasar al negro. */
-val DiaPenumbra = papelDeDia(0xFFCBBFA9, 0xFFBFB29A, 0xFFB6A890, 0xFF26211B, 0xFF5A5143)
+val DiaTibio = papelDeDia(0xFFEDE3CF, 0xFFE1D6C0, 0xFFD5C9B1, 0xFFF5EDDF)
+/** Penumbra: crema oscuro para leer al atardecer sin pasar al azul. */
+val DiaPenumbra = papelDeDia(0xFFD3C8B2, 0xFFC7BBA4, 0xFFBDB09A, 0xFFE0D6C3)
 
 val Papeles = listOf(DiaClaro, DiaTibio, DiaPenumbra)
 val NombresPapel = listOf("Claro", "Tibio", "Penumbra")
 
-/** Noche: negro absoluto, para que la pantalla OLED apague esos píxeles. */
-val Noche = Paleta(
+/** Abismo: negro absoluto, para que la pantalla OLED apague esos píxeles; la letra es espuma. */
+val Abismo = Paleta(
     fondo = Color(0xFF000000),
-    superficie = Color(0xFF151517),
-    texto = Color(0xFFECE6DA),
-    texto2 = Color(0xFF8E8E93),
-    linea = Color(0xFF1F1F22),
-    acento = Color(0xFFA8E6EE),
-    boton = Color(0xFFECE6DA),
+    superficie = Color(0xFF0B1620),
+    texto = Color(0xFFD5DEE2),
+    texto2 = Color(0xFF6F8798),
+    linea = Color(0xFF14222D),
+    acento = Azules.Hielo,
+    boton = Color(0xFFD5DEE2),
     botonTexto = Color(0xFF000000),
-    coloresLetra = listOf(Color(0xFFECE6DA), Color(0xFFB9B9BE), Color(0xFFA8E6EE), Color(0xFFE8C9A0)),
+    coloresLetra = listOf(Color(0xFFC9D4D9), Color(0xFFE8DCC4), Azules.Hielo, Azules.Bruma),
+    hoja = Color(0xFF0B1620),
+    seleccion = Color(0xFF1C2C38),
 )
 
-val NombresColorDia = listOf("Tinta", "Sepia", "Azul tinta", "Océano")
-val NombresColorNoche = listOf("Hueso", "Niebla", "Hielo", "Ámbar")
+/** Cianotipo: azul de Prusia apagado con letra crema. Cansa menos que el blanco sobre negro. */
+val Cianotipo = Paleta(
+    fondo = Color(0xFF0E2A3F),
+    superficie = Color(0xFF163650),
+    texto = Color(0xFFE8DCC4),
+    texto2 = Color(0xFF7E9BB0),
+    linea = Color(0xFF1C3D57),
+    acento = Azules.Hielo,
+    boton = Color(0xFFE8DCC4),
+    botonTexto = Color(0xFF0E2A3F),
+    coloresLetra = listOf(Color(0xFFE8DCC4), Color(0xFFC9D4D9), Azules.Hielo, Color(0xFFD9C7A3)),
+    hoja = Color(0xFF123650),
+    seleccion = Color(0xFF1F4866),
+)
+
+val Oscuros = listOf(Abismo, Cianotipo)
+val NombresOscuro = listOf("Abismo", "Cianotipo")
+
+val NombresColorDia = listOf("Tinta azul", "Prusia", "Grafito", "Sepia")
+val NombresColorNoche = listOf("Espuma", "Crema", "Hielo", "Bruma")
 val Tamanos = listOf(15, 17, 19, 22, 25)
 
 /** Modo día/noche y preferencias de lectura. Se guardan en el celular. */
@@ -99,6 +139,9 @@ object Tema {
     /** Tono del papel de día: 0 claro, 1 tibio, 2 penumbra. */
     var papel by mutableIntStateOf(1)
         private set
+    /** Modo oscuro: 0 abismo, 1 cianotipo. */
+    var oscuro by mutableIntStateOf(0)
+        private set
 
     fun iniciar(ctx: Context) {
         prefs = ctx.getSharedPreferences("tema", Context.MODE_PRIVATE)
@@ -107,6 +150,7 @@ object Tema {
         colorDia = prefs.getInt("color_dia", 0)
         colorNoche = prefs.getInt("color_noche", 0)
         papel = prefs.getInt("papel", 1)
+        oscuro = prefs.getInt("oscuro", 0)
     }
 
 
@@ -128,7 +172,12 @@ object Tema {
             }
         }
 
-    val p: Paleta get() = if (esNoche) Noche else Papeles[papel.coerceIn(0, Papeles.size - 1)]
+    val p: Paleta get() = if (esNoche) Oscuros[oscuro.coerceIn(0, Oscuros.size - 1)] else Papeles[papel.coerceIn(0, Papeles.size - 1)]
+
+    fun fijarOscuro(i: Int) {
+        oscuro = i.coerceIn(0, Oscuros.size - 1)
+        prefs.edit().putInt("oscuro", oscuro).apply()
+    }
 
     fun fijarPapel(i: Int) {
         papel = i.coerceIn(0, Papeles.size - 1)
@@ -166,7 +215,7 @@ object Tema {
         return when (h) {
             in 5..7 -> "Amanece sobre" to "el océano."
             in 8..11 -> "La estación" to "está en calma."
-            in 12..16 -> "Mediodía en" to "la órbita."
+            in 12..16 -> "Mediodía en" to "alta mar."
             in 17..19 -> "Entramos en" to "la sombra."
             in 20..23 -> "Turno de" to "medianoche."
             else -> "Hora de las" to "cosas extrañas."

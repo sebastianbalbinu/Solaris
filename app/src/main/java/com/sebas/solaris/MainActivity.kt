@@ -18,7 +18,7 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         // Nadie puede tomar capturas ni ver la estación en "apps recientes".
         window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
-        // pantalla completa: el planeta y el mar se dibujan también detrás de las barras del sistema
+        // pantalla completa: el mar se dibuja también detrás de las barras del sistema
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = android.graphics.Color.TRANSPARENT
         window.navigationBarColor = android.graphics.Color.TRANSPARENT

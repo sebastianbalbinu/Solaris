@@ -158,7 +158,7 @@ fun Hoja(visible: Boolean, alCerrar: () -> Unit, contenido: @Composable ColumnSc
             Column(
                 Modifier.fillMaxWidth()
                     .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
-                    .background(if (Tema.esNoche) Color(0xFF111113) else Color(0xFFF8F0E3))
+                    .background(Tema.p.hoja)
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
                     .padding(horizontal = 24.dp, vertical = 14.dp)
                     .navigationBarsPadding()

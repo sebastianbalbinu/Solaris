@@ -122,17 +122,21 @@ fun Entrada(act: MainActivity) {
         listOf(700L, 800L, 800L, 800L, 900L).forEach { delay(it); paso++ }
         if (conHuella && !pinVisible) Huella.pedir(act) { Casa.abrirConCelular() }
     }
-    val e = 1 - Math.pow(1 - llegada, 3.0)
-    val altitud = (520 - e * 108).toInt()
+    val e = (1 - Math.pow(1 - llegada, 3.0)).toFloat()
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        PlanetaCianotipo(Modifier.fillMaxSize().graphicsLayer { alpha = aparicion }) { llegada.toFloat() }
-        Box(Modifier.fillMaxWidth().height(220.dp).background(Brush.verticalGradient(listOf(Color(0xAA000000), Color.Transparent))))
-        Box(Modifier.fillMaxWidth().fillMaxHeight(0.55f).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC000000)))))
+        // el mar sube desde el abismo: aparece desde abajo mientras se aclara
+        MarCianotipo(Modifier.fillMaxSize().graphicsLayer {
+            alpha = aparicion
+            translationY = (1f - e) * size.height * 0.10f
+        })
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = (1f - e) * 0.85f }.background(Color.Black))
+        Box(Modifier.fillMaxWidth().height(220.dp).background(Brush.verticalGradient(listOf(Color(0xAA02070F), Color.Transparent))))
+        Box(Modifier.fillMaxWidth().fillMaxHeight(0.55f).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC02070F)))))
 
         Column(Modifier.statusBarsPadding().padding(horizontal = 24.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Senal("Estación Solaris · $altitud km", color = Color(0xFFD6EEF2))
-            Senal("Bajo nosotros: paso de Drake", color = Color(0xB3D6EEF2))
+            Senal("Estación Solaris · alta mar", color = Azules.Espuma)
+            Senal(Clima.LUGAR, color = Azules.Bruma)
         }
 
         Column(
@@ -140,11 +144,11 @@ fun Entrada(act: MainActivity) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                val gris = Color(0xFFA3AEB4)
-                val hielo = Color(0xFFA8E6EE)
-                if (paso >= 1) LineaArranque("Acople con la estación", "OK", gris, hielo)
-                if (paso >= 2) LineaArranque("Presión de cabina", "OK", gris, hielo)
-                if (paso >= 3) LineaArranque("El mar abajo", Clima.mar.nombre.lowercase(), gris, hielo)
+                val gris = Azules.Bruma
+                val hielo = Azules.Hielo
+                if (paso >= 1) LineaArranque("Señal de la estación", "OK", gris, hielo)
+                if (paso >= 2) LineaArranque("Viento", "${Clima.mar.viento.toInt()} nudos", gris, hielo)
+                if (paso >= 3) LineaArranque("El mar", Corriente.nombreVisible.lowercase(), gris, hielo)
                 if (paso >= 4) LineaArranque("Bitácora cifrada", "LISTA", gris, hielo)
             }
             Spacer(Modifier.height(30.dp))
@@ -153,23 +157,23 @@ fun Entrada(act: MainActivity) {
                 val alfa by animateFloatAsState(if (visible) 1f else 0f, tween(1300), label = "titulo")
                 val tracking by animateFloatAsState(if (visible) 9f else 22f, tween(1800, easing = FastOutSlowInEasing), label = "tracking")
                 val linea by animateFloatAsState(if (visible) 1f else 0f, tween(2000, delayMillis = 350, easing = FastOutSlowInEasing), label = "linea")
-                Text("SOLARIS", color = Color(0xFFEFE3CB), fontFamily = Sans, fontSize = 40.sp, letterSpacing = (tracking * 1.25f).sp,
+                Text("SOLARIS", color = Azules.Crema, fontFamily = Sans, fontSize = 40.sp, letterSpacing = (tracking * 1.25f).sp,
                     modifier = Modifier.graphicsLayer { alpha = alfa })
-                Horizonte(linea, Color(0xFFEFE3CB).copy(alpha = 0.8f), Modifier.width(250.dp))
+                Horizonte(linea, Azules.Crema.copy(alpha = 0.8f), Modifier.width(250.dp))
                 Spacer(Modifier.height(8.dp))
                 val (a, b) = Tema.saludo()
-                Text("$a $b", color = Color(0xFFCFC8BC), fontFamily = Serif, fontStyle = FontStyle.Italic, fontSize = 20.sp,
+                Text("$a $b", color = Azules.Espuma, fontFamily = Serif, fontStyle = FontStyle.Italic, fontSize = 20.sp,
                     modifier = Modifier.graphicsLayer { alpha = alfa })
                 Spacer(Modifier.height(28.dp))
                 if (visible) {
                     if (conHuella) {
                         Box(
                             Modifier.presionable { Sonidos.tic(); Huella.pedir(act) { Casa.abrirConCelular() } }
-                                .graphicsLayer { alpha = alfa }.size(72.dp).clip(CircleShape).background(Color(0x33FFFFFF)),
+                                .graphicsLayer { alpha = alfa }.size(72.dp).clip(CircleShape).background(Color(0x33B9C6CC)),
                             contentAlignment = Alignment.Center,
-                        ) { IconoHuella(Color(0xFFECE6DA)) }
+                        ) { IconoHuella(Azules.Crema) }
                         Spacer(Modifier.height(10.dp))
-                        Enlace("Usar PIN", color = Color(0xFFB9C3C8)) { pinVisible = true }
+                        Enlace("Usar PIN", color = Azules.Espuma) { pinVisible = true }
                     } else {
                         Pildora("Entrar", Modifier.width(200.dp).graphicsLayer { alpha = alfa }) { pinVisible = true }
                     }
@@ -194,7 +198,7 @@ private fun LineaArranque(que: String, estado: String, gris: Color, hielo: Color
     }
 }
 
-/** El PIN (o la frase llave) en una hoja oscura sobre el planeta. */
+/** El PIN (o la frase llave) en una hoja oscura sobre el mar. */
 @Composable
 private fun Candado(visible: Boolean, alCerrar: () -> Unit) {
     val scope = rememberCoroutineScope()
@@ -303,21 +307,21 @@ fun Interior() {
 @Composable
 fun BarraPestanas(vidrio: HazeState, modifier: Modifier = Modifier) {
     val oscura = Tema.esNoche || Nav.pestana != "cuaderno"
-    val tinte = if (oscura) Color(0x99161618) else Color(0xA6EFE4D0)
-    val activo = if (oscura) Color(0xFFECE6DA) else Color(0xFF1B1A18)
-    val inactivo = if (oscura) Color(0xFF8E8E93) else Color(0xFF7D725F)
+    val tinte = if (oscura) Color(0x990B1620) else Color(0xA6EDE3CF)
+    val activo = if (oscura) Color(0xFFE8DCC4) else Color(0xFF12304A)
+    val inactivo = if (oscura) Azules.Bruma else Color(0xFF5B6E80)
     val forma = RoundedCornerShape(28.dp)
     Row(
         modifier.navigationBarsPadding().padding(bottom = 14.dp)
             .hazeChild(vidrio, forma, HazeStyle(tint = tinte, blurRadius = 26.dp, noiseFactor = 0.08f))
-            .border(1.dp, if (oscura) Color(0x1FFFFFFF) else Color(0x14000000), forma)
+            .border(1.dp, if (oscura) Color(0x1FB9C6CC) else Color(0x1412304A), forma)
             .padding(horizontal = 6.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         listOf("cuaderno" to "Cuaderno", "cinta" to "Cinta", "oceano" to "Océano").forEach { (clave, nombre) ->
             val sel = Nav.pestana == clave
             val fondoSel by animateColorAsState(
-                if (sel) (if (oscura) Color(0x33FFFFFF) else Color(0xCCFBF5EB)) else Color.Transparent, tween(220), label = "pestana",
+                if (sel) (if (oscura) Color(0x33B9C6CC) else Color(0xCCF8F1E5)) else Color.Transparent, tween(220), label = "pestana",
             )
             Box(
                 Modifier.presionable { if (!sel) { Sonidos.tic(); Nav.pestana = clave } }

@@ -35,9 +35,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
-private val Claro = Color(0xFFE4F1F3)
-private val Tenue = Color(0xFF9FBAC2)
-private val Calido = Color(0xFFF2C2A6)
+private val Claro = Color(0xFFDCE6EA)
+private val Tenue = Azules.Bruma
+private val Calido = Azules.Crema
 
 @Composable
 fun Oceano() {
@@ -60,9 +60,9 @@ fun Oceano() {
         mostrada = q.trim()
     }
 
-    Box(Modifier.fillMaxSize().background(Color(0xFF05080C))) {
+    Box(Modifier.fillMaxSize().background(Azules.Abismo)) {
         MarCianotipo(Modifier.fillMaxSize())
-        Box(Modifier.fillMaxWidth().height(190.dp).background(Brush.verticalGradient(listOf(Color(0x99050810), Color.Transparent))))
+        Box(Modifier.fillMaxWidth().height(190.dp).background(Brush.verticalGradient(listOf(Color(0x9902070F), Color.Transparent))))
 
         Column(Modifier.statusBarsPadding().padding(horizontal = 24.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(Modifier.fillMaxWidth()) {
@@ -70,16 +70,16 @@ fun Oceano() {
                 Senal("${mar.horaLocal()} local", color = Claro)
             }
             Senal(Clima.LUGAR, color = Tenue)
-            Text(mar.nombre, color = Claro, fontFamily = Mono, fontSize = 14.sp, letterSpacing = 2.5.sp, modifier = Modifier.padding(top = 10.dp))
+            Text(Corriente.nombreVisible, color = Claro, fontFamily = Mono, fontSize = 14.sp, letterSpacing = 2.5.sp, modifier = Modifier.padding(top = 10.dp))
             Senal("Ola ${uno(mar.ola)} m · ${mar.periodo.toInt()} s · viento ${mar.viento.toInt()} nudos", color = Tenue)
             Senal("Nubes ${mar.nubes.toInt()}% · visibilidad ${uno(mar.visibilidad)} km", color = Tenue)
-            Senal(if (mar.real) "Lectura real · " + formato("HH:mm", mar.cuando) else "Esperando la primera lectura del mar…", color = Tenue)
+            Senal(if (mar.real) "Lectura real · " + mar.nombre.lowercase() + " · " + formato("HH:mm", mar.cuando) else "Esperando la primera lectura del mar…", color = Tenue)
         }
 
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().imePadding()) {
-            Box(Modifier.fillMaxWidth().height(70.dp).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xF0040608)))))
+            Box(Modifier.fillMaxWidth().height(70.dp).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xF002070F)))))
             Column(
-                Modifier.fillMaxWidth().background(Color(0xF0040608)).navigationBarsPadding().padding(start = 24.dp, end = 24.dp, bottom = 92.dp),
+                Modifier.fillMaxWidth().background(Color(0xF002070F)).navigationBarsPadding().padding(start = 24.dp, end = 24.dp, bottom = 92.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 if (verTemas) {
@@ -108,7 +108,7 @@ fun Oceano() {
                 }
 
                 Row(
-                    Modifier.fillMaxWidth().border(1.dp, Color(0x33E4F1F3), RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 4.dp),
+                    Modifier.fillMaxWidth().border(1.dp, Color(0x33B9C6CC), RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text("solaris>", color = Tenue, fontFamily = Mono, fontSize = 13.sp)
@@ -128,7 +128,7 @@ fun Oceano() {
                     listOf("hoy", "ayer", "cintas", "#temas").forEach { c ->
                         Text(
                             c, color = Claro, fontFamily = Mono, fontSize = 12.sp,
-                            modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(Color(0x1FE4F1F3))
+                            modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(Color(0x1FB9C6CC))
                                 .clickable { if (c == "#temas") { Sonidos.tic(); verTemas = true; mostrada = "" } else { consulta = c; consultar(c) } }
                                 .padding(horizontal = 12.dp, vertical = 9.dp),
                         )

@@ -173,8 +173,8 @@ fun Cinta() {
                 Carrete(d(232f), d(463f), d(17f), d(17f + 9f * avance), if (girando) giro * 1.3f else 0f)
 
                 // la etiqueta del casete
-                val tinta = Color(0xFF2C2418)
-                val tinta2 = Color(0xFF5A4A30)
+                val tinta = Color(0xFF12304A)
+                val tinta2 = Color(0xFF3C5A6E)
                 val titulo = actual?.title?.ifBlank { "cinta sin nombre" } ?: "registro %03d".format(numeroNueva)
                 Text(titulo, color = tinta, fontFamily = Serif, fontSize = (19 * u).sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.offset(d(66f), d(383f)).width(d(196f)))
@@ -201,7 +201,7 @@ fun Cinta() {
                     actual.text.isNotBlank() -> "“" + actual.text.take(60) + "…”"
                     else -> "${posicion} de ${cintas.size} · mantén presionado para renombrar"
                 }
-                Text(pie, color = Color(0xFF4A3C28), fontFamily = Serif, fontStyle = FontStyle.Italic, fontSize = (13 * u).sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                Text(pie, color = Color(0xFF2E4A60), fontFamily = Serif, fontStyle = FontStyle.Italic, fontSize = (13 * u).sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.offset(d(66f), d(525f)).width(d(250f)))
 
                 // tocar o mantener la etiqueta
@@ -238,7 +238,7 @@ fun Cinta() {
             LaunchedEffect(msg) { delay(3200); aviso = null }
             Text(
                 msg, color = Color(0xFFECE6DA), fontFamily = Sans, fontSize = 14.sp,
-                modifier = Modifier.align(Alignment.TopCenter).padding(top = 24.dp).clip(RoundedCornerShape(20.dp)).background(Color(0xE6202023)).padding(horizontal = 18.dp, vertical = 12.dp),
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 24.dp).clip(RoundedCornerShape(20.dp)).background(Color(0xE60B1620)).padding(horizontal = 18.dp, vertical = 12.dp),
             )
         }
 

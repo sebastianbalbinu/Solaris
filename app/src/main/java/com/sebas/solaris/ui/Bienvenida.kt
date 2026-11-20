@@ -76,12 +76,12 @@ private fun Inicio(alCrear: () -> Unit, alEntrar: () -> Unit) {
             )
             Spacer(Modifier.height(4.dp))
             Text("Una estación sobre el océano para guardar lo que piensas, sueñas y dices.",
-                color = Color(0xFFB9C3C8), fontFamily = Sans, fontSize = 15.sp, lineHeight = 22.sp,
+                color = Azules.Espuma, fontFamily = Sans, fontSize = 15.sp, lineHeight = 22.sp,
                 textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 12.dp))
             Spacer(Modifier.weight(1.3f))
-            Pildora("Crear mi estación", Modifier.fillMaxWidth(), fondo = Color(0xFFEFE3CB), tinta = Color.Black, alTocar = alCrear)
+            Pildora("Crear mi estación", Modifier.fillMaxWidth(), fondo = Azules.Crema, tinta = Azules.Abismo, alTocar = alCrear)
             Spacer(Modifier.height(12.dp))
-            Pildora("Ya tengo una", Modifier.fillMaxWidth(), primaria = false, fondo = Color(0x1FFFFFFF), tinta = Color(0xFFEFE3CB), alTocar = alEntrar)
+            Pildora("Ya tengo una", Modifier.fillMaxWidth(), primaria = false, fondo = Color(0x1FB9C6CC), tinta = Azules.Crema, alTocar = alEntrar)
             Spacer(Modifier.height(8.dp))
         }
     }
@@ -214,7 +214,7 @@ fun PinNuevo(alTerminar: () -> Unit) {
                 listOf(4, 6).forEach { n ->
                     Box(
                         Modifier.width(110.dp).height(38.dp).clip(RoundedCornerShape(11.dp))
-                            .background(if (largo == n) (if (Tema.esNoche) Color(0xFF2C2C30) else Tema.p.fondo) else Color.Transparent)
+                            .background(if (largo == n) p.seleccion else Color.Transparent)
                             .clickable { largo = n; pin = "" },
                         contentAlignment = Alignment.Center,
                     ) { Text("$n dígitos", color = if (largo == n) p.texto else p.texto2, fontFamily = Sans, fontSize = 14.sp) }
