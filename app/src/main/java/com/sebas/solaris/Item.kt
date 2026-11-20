@@ -22,6 +22,8 @@ data class Item(
     val updated: Long,
     val deleted: Boolean = false,
     val dur: Long = 0,
+    /** Cómo va pegada cada foto en la lámina: "tamaño,giro" (tamaño 0 pequeña, 1 mediana, 2 grande; giro en grados). */
+    val estilos: Map<String, String> = emptyMap(),
 ) {
     val esEntrada: Boolean get() = kind == "entrada"
     val esCuarto: Boolean get() = kind == "cuarto"
@@ -49,6 +51,7 @@ data class Item(
         .put("updated", updated)
         .put("deleted", deleted)
         .put("dur", dur)
+        .put("estilos", JSONObject(estilos))
 
     companion object {
         fun nuevoId(): String = UUID.randomUUID().toString()
@@ -67,6 +70,7 @@ data class Item(
                 updated = o.optLong("updated"),
                 deleted = o.optBoolean("deleted"),
                 dur = o.optLong("dur"),
+                estilos = o.optJSONObject("estilos")?.let { e -> e.keys().asSequence().associateWith { e.optString(it) } } ?: emptyMap(),
             )
         }
 
@@ -74,5 +78,21 @@ data class Item(
             id = nuevoId(), kind = "cuarto", room = null, title = nombre, text = "",
             photos = emptyList(), color = color, created = cuando, updated = cuando,
         )
+    }
+}
+
+/** Cómo va pegada una foto: su tamaño y un giro leve, como si se hubiera pegado a mano. */
+data class EstiloFoto(val tam: Int, val giro: Float) {
+    fun texto() = "$tam," + String.format(java.util.Locale.US, "%.1f", giro)
+    val ancho: Float get() = when (tam) { 0 -> 0.48f; 2 -> 1f; else -> 0.7f }
+
+    companion object {
+        fun de(s: String?): EstiloFoto {
+            val p = s?.split(",") ?: return EstiloFoto(1, 0f)
+            return EstiloFoto(p.getOrNull(0)?.toIntOrNull()?.coerceIn(0, 2) ?: 1, p.getOrNull(1)?.toFloatOrNull()?.coerceIn(-10f, 10f) ?: 0f)
+        }
+
+        /** Una foto recién pegada: mediana y un poco chueca. */
+        fun nueva() = EstiloFoto(1, (kotlin.random.Random.nextFloat() * 5f - 2.5f))
     }
 }

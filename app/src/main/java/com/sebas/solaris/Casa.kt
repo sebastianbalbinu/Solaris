@@ -38,6 +38,7 @@ class Borrador(id: String?, cuarto: String?, val abrirFoto: Boolean = false) {
     var texto by mutableStateOf("")
     var cuarto by mutableStateOf(cuarto)
     var fotos by mutableStateOf(listOf<String>())
+    var estilos by mutableStateOf(mapOf<String, String>())
     val fotosNuevas = mutableListOf<String>()
     var creado: Long = System.currentTimeMillis()
     var cargado = id == null
@@ -342,7 +343,7 @@ object Casa {
         b.fotosNuevas.retainAll(b.fotos)
         val previo = b.id?.let { porId(it) }
         if (previo != null && previo.title == b.titulo.trim() && previo.text == b.texto &&
-            previo.room == b.cuarto && previo.photos == b.fotos
+            previo.room == b.cuarto && previo.photos == b.fotos && previo.estilos == b.estilos.filterKeys { it in b.fotos }
         ) return
         val ahora = System.currentTimeMillis()
         previo?.photos?.filter { it !in b.fotos }?.let { olvidarFotos(it) }
@@ -358,6 +359,7 @@ object Casa {
                 color = 0,
                 created = previo?.created ?: b.creado,
                 updated = ahora,
+                estilos = b.estilos.filterKeys { it in b.fotos },
             )
         )
     }

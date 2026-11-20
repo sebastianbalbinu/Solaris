@@ -42,6 +42,7 @@ import com.sebas.solaris.Casa
 import com.sebas.solaris.Item
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.ui.text.style.TextAlign
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -70,19 +71,20 @@ fun Editor(b: Borrador) {
     var hojaLetra by remember { mutableStateOf(false) }
     var hojaOpciones by remember { mutableStateOf(false) }
     var fotoAbierta by remember { mutableStateOf<String?>(null) }
+    val ctxEditor = androidx.compose.ui.platform.LocalContext.current
 
     var cuerpo by remember(b) { mutableStateOf(TextFieldValue(b.texto)) }
     LaunchedEffect(b) {
         if (!b.cargado) {
             b.id?.let { Casa.porId(it) }?.let { e ->
-                b.titulo = e.title; b.texto = e.text; b.fotos = e.photos; b.creado = e.created
+                b.titulo = e.title; b.texto = e.text; b.fotos = e.photos; b.estilos = e.estilos; b.creado = e.created
             }
             b.cargado = true
             cuerpo = TextFieldValue(b.texto)
         }
     }
     // autoguardado: unos segundos después de dejar de escribir
-    LaunchedEffect(b.titulo, b.texto, b.fotos) {
+    LaunchedEffect(b.titulo, b.texto, b.fotos, b.estilos) {
         delay(2500)
         if (b.cargado && !b.vacio()) Casa.guardarBorrador(b)
     }
@@ -94,7 +96,7 @@ fun Editor(b: Borrador) {
         scope.launch {
             for (u in uris) {
                 val id = Casa.agregarFoto(u)
-                if (id != null) { b.fotos = b.fotos + id; b.fotosNuevas.add(id) }
+                if (id != null) { b.fotos = b.fotos + id; b.estilos = b.estilos + (id to com.sebas.solaris.EstiloFoto.nueva().texto()); b.fotosNuevas.add(id) }
             }
         }
     }
@@ -124,10 +126,8 @@ fun Editor(b: Borrador) {
                 Redondo(alTocar = { hojaLetra = true }) { Text("Aa", color = p.texto, fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 15.sp) }
                 Spacer(Modifier.width(8.dp))
                 BotonModo()
-                if (b.id != null) {
-                    Spacer(Modifier.width(8.dp))
-                    Redondo(alTocar = { hojaOpciones = true }) { IconoPuntos(p.texto) }
-                }
+                Spacer(Modifier.width(8.dp))
+                Redondo(alTocar = { hojaOpciones = true }) { IconoPuntos(p.texto) }
             }
             Column(
                 Modifier.weight(1f).fillMaxWidth().verticalScroll(desplazamiento).padding(horizontal = 24.dp).padding(top = 96.dp, bottom = 120.dp),
@@ -141,13 +141,10 @@ fun Editor(b: Borrador) {
                     b.titulo, { b.titulo = it }, "Título",
                     TextStyle(color = p.texto, fontFamily = Serif, fontSize = 34.sp, lineHeight = 38.sp),
                 )
-                if (b.fotos.isNotEmpty()) {
-                    Spacer(Modifier.height(18.dp))
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(b.fotos, key = { it }) { id ->
-                            Foto(id, Modifier.size(width = 150.dp, height = 190.dp).clip(RoundedCornerShape(14.dp)).clickable { fotoAbierta = id }, lado = 500)
-                        }
-                    }
+                // las fotos van pegadas a la lámina: cada una con su tamaño y su giro
+                b.fotos.forEachIndexed { i, id ->
+                    Spacer(Modifier.height(if (i == 0) 22.dp else 14.dp))
+                    FotoPegada(id, com.sebas.solaris.EstiloFoto.de(b.estilos[id]), i) { fotoAbierta = id }
                 }
                 Spacer(Modifier.height(18.dp))
                 val tam = Tema.tamanoLetra
@@ -196,9 +193,35 @@ fun Editor(b: Borrador) {
         val abierta = fotoAbierta
         if (abierta != null) {
             BackHandler { fotoAbierta = null }
-            Column(Modifier.fillMaxSize().background(Color(0xF2000000)).padding(18.dp)) {
+            val est = com.sebas.solaris.EstiloFoto.de(b.estilos[abierta])
+            fun fijar(e: com.sebas.solaris.EstiloFoto) { b.estilos = b.estilos + (abierta to e.texto()); com.sebas.solaris.Sonidos.tic() }
+            Column(Modifier.fillMaxSize().background(Color(0xF2000000)).systemBarsPadding().padding(18.dp)) {
                 Foto(abierta, Modifier.weight(1f).fillMaxWidth().clickable { fotoAbierta = null }, lado = 1600, recortar = false)
                 Spacer(Modifier.height(14.dp))
+                // tamaño y giro de la foto pegada
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("Pequeña", "Mediana", "Grande").forEachIndexed { t, nombre ->
+                        val sel = est.tam == t
+                        Text(
+                            nombre, color = if (sel) Color.Black else Color.White, fontFamily = Sans, fontSize = 14.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.weight(1f).clip(CircleShape).background(if (sel) Color(0xFFEDE3CF) else Color(0x26FFFFFF))
+                                .clickable { fijar(est.copy(tam = t)) }.padding(vertical = 10.dp),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("↺  Girar" to -2f, "Recta" to 0f, "Girar  ↻" to 2f).forEach { (nombre, paso) ->
+                        Text(
+                            nombre, color = Color.White, fontFamily = Sans, fontSize = 14.sp, textAlign = TextAlign.Center,
+                            modifier = Modifier.weight(1f).clip(CircleShape).background(Color(0x26FFFFFF))
+                                .clickable { fijar(est.copy(giro = if (paso == 0f) 0f else (est.giro + paso).coerceIn(-10f, 10f))) }
+                                .padding(vertical = 10.dp),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Pildora("Quitar de la nota", Modifier.weight(1f), primaria = false) { b.fotos = b.fotos - abierta; fotoAbierta = null }
                     Pildora("Cerrar", Modifier.weight(1f)) { fotoAbierta = null }
@@ -210,8 +233,12 @@ fun Editor(b: Borrador) {
 
         Hoja(hojaOpciones, { hojaOpciones = false }) {
             Text("Esta nota", color = p.texto, fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 17.sp)
-            Parrafo("Borrarla la quita de este celular y de la nube, para siempre.")
-            Pildora("Borrar nota", Modifier.fillMaxWidth(), primaria = false) {
+            Pildora("Compartir como PDF", Modifier.fillMaxWidth()) {
+                hojaOpciones = false
+                scope.launch { compartirPdf(ctxEditor, b) }
+            }
+            if (b.id != null) Parrafo("Borrarla la quita de este celular y de la nube, para siempre.")
+            if (b.id != null) Pildora("Borrar nota", Modifier.fillMaxWidth(), primaria = false) {
                 hojaOpciones = false
                 b.id?.let { Casa.borrarNota(it) }
                 Nav.borrador = null

@@ -293,8 +293,11 @@ fun Interior() {
     var ultimoBorrador by remember { mutableStateOf<Borrador?>(null) }
     Nav.borrador?.let { ultimoBorrador = it }
 
+    // mientras algo está encima (escribir, ajustes), la orilla se retira: solo queda el mar
+    val encima = Nav.borrador != null || Nav.ajustes || Nav.cambiarPin
+    val orilla by animateFloatAsState(if (encima) 0f else 1f, tween(if (encima) 220 else 500), label = "orilla")
     Box(Modifier.fillMaxSize()) {
-        Orilla()
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = orilla }) { if (orilla > 0.01f) Orilla() }
         Encima(Nav.borrador != null) { ultimoBorrador?.let { Editor(it) } }
         Encima(Nav.ajustes) { Ajustes() }
         Encima(Nav.cambiarPin) { Box(Modifier.fillMaxSize().background(Tema.p.fondo).systemBarsPadding()) { PinNuevo { Nav.cambiarPin = false } } }
