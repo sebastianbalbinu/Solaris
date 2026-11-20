@@ -29,6 +29,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -81,11 +85,13 @@ fun Orilla() {
         }
     }
 
+    // mientras se respira, todo lo demás se retira
+    val retirada by androidx.compose.animation.core.animateFloatAsState(if (Oleaje.respirando) 0f else 1f, androidx.compose.animation.core.tween(1200), label = "retirada")
     Box(Modifier.fillMaxSize()) {
         // el agua se oscurece al bajar
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = hondura * 0.84f }.background(Azules.Abismo))
 
-        LazyColumn(Modifier.fillMaxSize(), state = lista, contentPadding = PaddingValues(bottom = 150.dp)) {
+        LazyColumn(Modifier.fillMaxSize().graphicsLayer { alpha = retirada }, state = lista, contentPadding = PaddingValues(bottom = 150.dp)) {
             item(key = "superficie") { Superficie(Modifier.fillParentMaxHeight()) }
             item(key = "sonar") { Sonar(consulta, { consulta = it }, registros.size) }
             if (registros.isEmpty()) {
@@ -116,7 +122,58 @@ fun Orilla() {
             }
         }
 
-        BotonUnico(Modifier.align(Alignment.BottomCenter))
+        BotonUnico(Modifier.align(Alignment.BottomCenter).graphicsLayer { alpha = retirada })
+        Respiracion()
+    }
+}
+
+/**
+ * Respirar con el mar: mientras el dedo se queda sobre el agua, el mar va más lento y una guía
+ * acompaña 4 segundos para tomar aire y 6 para soltarlo. Al soltar, todo vuelve.
+ */
+@Composable
+private fun Respiracion() {
+    if (!Oleaje.respirando) return
+    val vista = androidx.compose.ui.platform.LocalView.current
+    var fase by remember { mutableStateOf(0f) }
+    var inhala by remember { mutableStateOf(true) }
+    LaunchedEffect(Unit) {
+        val inicio = System.currentTimeMillis()
+        var antes = true
+        while (isActive) {
+            val s = ((System.currentTimeMillis() - inicio) % 10_000L) / 1000f
+            inhala = s < 4f
+            fase = if (inhala) s / 4f else 1f - (s - 4f) / 6f
+            if (inhala != antes) {
+                antes = inhala
+                vista.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+            }
+            delay(33)
+        }
+    }
+    val suave = fase * fase * (3 - 2 * fase)
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        // un resplandor en el horizonte que crece al tomar aire y se apaga al soltarlo
+        Canvas(Modifier.fillMaxSize()) {
+            val y = size.height * 0.36f
+            drawRect(
+                Brush.verticalGradient(
+                    0f to Color.Transparent,
+                    (0.36f - 0.06f - 0.12f * suave).coerceAtLeast(0.001f) to Color.Transparent,
+                    0.36f to Azules.Crema.copy(alpha = 0.10f + 0.18f * suave),
+                    (0.36f + 0.05f + 0.10f * suave) to Color.Transparent,
+                    1f to Color.Transparent,
+                )
+            )
+            drawLine(Azules.Crema.copy(alpha = 0.25f + 0.35f * suave), Offset(size.width * (0.5f - 0.18f - 0.22f * suave), y), Offset(size.width * (0.5f + 0.18f + 0.22f * suave), y), 1.2f * density)
+        }
+        Column(Modifier.padding(top = 220.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            AnimatedContent(targetState = inhala, transitionSpec = { fadeIn(tween(900)) togetherWith fadeOut(tween(900)) }, label = "respira") { i ->
+                Text(if (i) "toma aire" else "suéltalo", color = Azules.Crema.copy(alpha = 0.85f), fontFamily = Serif, fontStyle = FontStyle.Italic, fontSize = 28.sp)
+            }
+            Spacer(Modifier.height(8.dp))
+            Senal("respirando con el mar", color = Azules.Espuma.copy(alpha = 0.6f))
+        }
     }
 }
 
@@ -126,7 +183,21 @@ fun Orilla() {
 private fun Superficie(modifier: Modifier) {
     val mar = Clima.mar
     val (a, b) = Tema.saludo()
-    Box(modifier.fillMaxWidth()) {
+    val vista = androidx.compose.ui.platform.LocalView.current
+    Box(modifier.fillMaxWidth().pointerInput(Unit) {
+        // mantener el dedo sobre el mar (sin moverlo) es respirar con él
+        awaitEachGesture {
+            awaitFirstDown(requireUnconsumed = false)
+            var solto = false
+            withTimeoutOrNull(650) { waitForUpOrCancellation(); solto = true }
+            if (!solto) {
+                Oleaje.respirando = true
+                vista.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                waitForUpOrCancellation()
+                Oleaje.respirando = false
+            }
+        }
+    }) {
         // velos para que la letra se lea sobre el cielo y sobre el agua
         Box(Modifier.fillMaxWidth().height(320.dp).background(Brush.verticalGradient(listOf(Color(0x9902070F), Color.Transparent))))
 
@@ -156,7 +227,7 @@ private fun Superficie(modifier: Modifier) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                "desliza hacia abajo para recordar", color = Azules.Espuma, fontFamily = Sans, fontSize = 13.sp,
+                "deja el dedo sobre el mar para respirar · desliza para recordar", color = Azules.Espuma, fontFamily = Sans, fontSize = 13.sp,
                 style = TextStyle(shadow = androidx.compose.ui.graphics.Shadow(Color(0xCC02070F), Offset(0f, 1f), 10f)),
             )
             Spacer(Modifier.height(6.dp))

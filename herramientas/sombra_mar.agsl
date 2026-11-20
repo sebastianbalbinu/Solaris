@@ -13,6 +13,11 @@ uniform float alba;
 uniform float lluvia;
 uniform float flash;
 uniform float azul;
+uniform float solx;
+uniform float solh;
+uniform float luna;
+uniform float nieve;
+uniform float aurora;
 
 float cl(float x) { return clamp(x, 0.0, 1.0); }
 
@@ -75,6 +80,41 @@ float viento(float2 p, float pie, float amp0, float pico0) {
     return hh;
 }
 
+// una ola con cresta afilada y seno ancho (como las de verdad): k > 1 la empina
+float afilada(float th, float k) {
+    float u = sin(th) * 0.5 + 0.5;
+    return pow(u, k) * 2.0 - 0.75;
+}
+
+// las olas grandes: el mar de fondo (largo, del período real) y el mar de viento (más corto y empinado)
+float grandes(float2 p, float pie) {
+    float Lp = 9.81 * periodo * periodo / 6.2832;
+    float h = 0.0;
+    for (int i = 0; i < 3; i++) {
+        float fi = float(i);
+        float lr = i == 0 ? 1.0 : (i == 1 ? 0.63 : 0.41);
+        float ang = i == 0 ? 0.05 : (i == 1 ? 0.42 : -0.5);
+        float alt = i == 0 ? 0.45 : (i == 1 ? 0.30 : 0.25);
+        float lam = Lp * lr;
+        float k = 6.2832 / lam;
+        float a = ola * 0.5 * alt * (1.0 - pic * 0.4) * smoothstep(3.0, 9.0, lam / pie);
+        h += a * afilada(k * (sin(ang) * p.x + cos(ang) * p.y) - sqrt(9.81 * k) * t + fi * 2.1, 1.4);
+    }
+    // el mar de viento: crece con el viento y es lo que hace "bravo" al mar
+    float lv = mix(38.0, 85.0, cl(ola / 10.0));
+    for (int i = 0; i < 4; i++) {
+        float fi = float(i);
+        float lr = i == 0 ? 1.0 : (i == 1 ? 0.74 : (i == 2 ? 0.58 : 0.47));
+        float ang = i == 0 ? 0.25 : (i == 1 ? -0.3 : (i == 2 ? 0.75 : -0.05));
+        float alt = i == 0 ? 0.5 : (i == 1 ? 0.35 : (i == 2 ? 0.28 : 0.2));
+        float lam = lv * lr;
+        float k = 6.2832 / lam;
+        float a = ola * 0.5 * pic * alt * 1.35 * smoothstep(3.0, 9.0, lam / pie);
+        h += a * afilada(k * (sin(ang) * p.x + cos(ang) * p.y) - sqrt(9.81 * k) * t + fi * 1.7 + 0.6, 2.6);
+    }
+    return h;
+}
+
 // los azules del logo: del abismo al prusia, la niebla y la espuma crema
 half3 tono(float x) {
     x = cl(x) * 7.0;
@@ -105,11 +145,61 @@ half4 main(float2 fragCoord) {
     float x = fragCoord.x;
     float y = fragCoord.y;
     // el horizonte sube y baja con el mar de fondo, como desde la cubierta
-    float hz = H * (0.36 + sin(t * 6.2832 / periodo) * ola * 0.0016);
+    float hz = H * (0.36 + sin(t * 6.2832 / periodo) * ola * 0.0035);
     float lum = 0.0;
     float esp = 0.0;
+    float brilloSol = 0.0;
+    // cuánto gris propio de nube tiene este píxel (las nubes no son azules: lo reflejan)
+    float gris = 0.0;
+    float brilloLuna = 0.0;
 
-    if (y < hz) {
+    // la cámara: desde la cubierta, baja, y se mece con el oleaje
+    float roll = sin(t * 6.2832 / periodo * 0.93 + 1.3) * ola * 0.005;
+    float2 cen = float2(W * 0.5, H * 0.5);
+    float2 rp = float2(x, y) - cen;
+    rp = float2(rp.x * cos(roll) - rp.y * sin(roll), rp.x * sin(roll) + rp.y * cos(roll));
+    x = rp.x + cen.x; y = rp.y + cen.y;
+    // la estación flota: sube y baja con la ola que tiene debajo (así nunca queda bajo el agua)
+    float hc = 5.5 + grandes(float2(0.0), 0.4) * 0.85;
+    float v = (y - hz) / (H - hz);
+    float3 dir = normalize(float3((x / W - 0.5) * 1.15, -(y - hz) / (H - hz) * 0.62, 1.0));
+    bool agua = false;
+    float dist = 0.0;
+    float techo = ola * 0.75 + 1.5;
+    if (dir.y < 0.4 && hc < techo + 40.0) {
+        // el rayo busca la superficie: las crestas cercanas pueden tapar lo de atrás y hasta el horizonte
+        // primero se avanza a pasos que crecen con la distancia hasta pasar bajo el agua; luego se afina
+        float ta = 0.0;
+        float ha = hc - grandes(float2(0.0), 0.4);
+        float tb = 0.0;
+        float hb = ha;
+        // paso seguro: lo que falta para tocar el agua, dividido por lo empinado que puede ser el mar
+        float lip = 0.12 + 0.9 * pic * cl(ola / 8.0);
+        for (int i = 0; i < 110; i++) {
+            float paso = max(0.25, ha / (max(-dir.y, 0.0) + lip));
+            tb = ta + paso;
+            float3 q = dir * tb;
+            hb = (hc + q.y) - grandes(q.xz, max(0.4, tb * 0.003));
+            if (hb < 0.0 || tb > 2600.0) break;
+            // el rayo ya va por encima de cualquier ola posible: es cielo
+            if (dir.y > 0.0 && hc + dir.y * tb > techo) break;
+            ta = tb; ha = hb;
+        }
+        if (hb < 0.0) {
+            for (int i = 0; i < 7; i++) {
+                float tmid = mix(ta, tb, ha / (ha - hb));
+                float3 q = dir * tmid;
+                float hmid = (hc + q.y) - grandes(q.xz, max(0.4, tmid * 0.003));
+                if (hmid < 0.0) { tb = tmid; hb = hmid; } else { ta = tmid; ha = hmid; }
+            }
+            dist = tb;
+            agua = true;
+        }
+    }
+
+    if (!agua) {
+        y = min(y, hz - 0.5);
+
         float elev = (hz - y) / hz;
         float dist = 1.0 / (elev * 1.8 + 0.16);
         float cu = (x / W - 0.5) * dist * 1.6;
@@ -131,78 +221,133 @@ half4 main(float2 fragCoord) {
         lum += alba * 0.16 * cl(1.0 - dxs * dxs) * exp(-elev * 5.0) * (1.0 - nubes * 0.5);
         float pared = cl(1.0 - vis * 0.5);
         lum = mix(lum, 0.42 + 0.04 * (n - 0.5), pared * 0.85);
+        // las nubes cargadas pierden el azul: más gris cuanto más densas y más cubierto el cielo
+        gris = cl(sombra * 0.8 + (n - 0.45) * 0.9) * (0.35 + 0.65 * nubes) * bruma0;
+        gris = max(gris, nubes * nubes * 0.55);
+        // el sol: un resplandor ancho y cálido, sin borde nítido (deslumbra); se hunde tras el horizonte en el ocaso
+        float2 cd = float2(solx * W, hz * (1.0 - solh * 2.4));
+        float bajo = smoothstep(hz + 1.0, hz - 2.0, y);
+        float ds = length(float2(x, y) - cd) / (W * 0.034);
+        float velo = (1.0 - nubes * 0.5) * (1.0 - sombra * 0.4);
+        brilloSol = (smoothstep(1.15, 0.6, ds) * 0.9 + exp(-ds * 0.35) * 0.35) * alba * bajo * velo;
+        // la luna: más pequeña, de borde nítido, con sus mares grises y un halo frío alrededor
+        float dl = length(float2(x, y) - cd) / (W * 0.022);
+        float mares = ruido((float2(x, y) - cd) / (W * 0.009)) * 0.5 + ruido((float2(x, y) - cd) / (W * 0.004) + 3.0) * 0.5;
+        float discoLuna = smoothstep(1.0, 0.93, dl) * (1.25 - mares * 0.4);
+        float anillo = exp(-abs(dl - 5.0) * 0.6) * 0.05;
+        brilloLuna = (discoLuna + exp(-dl * 0.45) * 0.18 + anillo) * luna * bajo * velo;
+        lum += brilloSol * 0.7 + brilloLuna * 0.6;
+        // aurora austral: cortinas que ondulan despacio
+        if (aurora > 0.01) {
+            float ax = x / W;
+            // la cortina sigue una curva que ondula; su borde de abajo es nítido y se desvanece hacia arriba
+            float curva = 0.2 + 0.08 * sin(ax * 4.0 + t * 0.05) + 0.08 * (fbm(float2(ax * 2.0 + t * 0.02, 3.0)) - 0.5);
+            float sobre = elev - curva;
+            float cortina = smoothstep(-0.012, 0.006, sobre) * exp(-max(sobre, 0.0) * 7.0);
+            float pliegue = fbm(float2(ax * 3.0 + t * 0.012, t * 0.03));
+            float hebras = 0.35 + 0.65 * pow(ruido(float2(ax * 70.0 + pliegue * 10.0, t * 0.25)), 1.4);
+            // rayos que suben desde el borde
+            float rayos = exp(-max(sobre, 0.0) * 5.0) * pow(ruido(float2(ax * 140.0, t * 0.2)), 3.0) * 0.6;
+            // y un resplandor ancho que tiñe el cielo alrededor
+            float resplandor = exp(-max(sobre, 0.0) * 6.0) * smoothstep(-0.03, 0.0, sobre) * 0.2;
+            lum += aurora * (1.1 * cortina * hebras + 0.6 * rayos * smoothstep(-0.01, 0.01, sobre) + resplandor) * (1.0 - nubes * 0.6);
+        }
         // relámpago: las nubes se iluminan por dentro
         lum += flash * (0.25 + n * 0.3);
     } else {
-        float hc = 8.4;
-        float v = (y - hz) / (H - hz);
-        float tana = max(v, 0.001) * 0.62;
-        float z = hc / tana;
-        float xw = (x / W - 0.5) * z * 1.15;
-        float pie = max(z * 1.15 / W, hc / (tana * tana) * 0.62 / (H - hz));
-        float Lp = 9.81 * periodo * periodo / 6.2832;
-
-        float h = 0.0; float dx = 0.0; float dz = 0.0;
-        // mar de fondo: tres trenes largos con el período real
-        for (int i = 0; i < 3; i++) {
-            float fi = float(i);
-            float lr = i == 0 ? 1.0 : (i == 1 ? 0.63 : 0.41);
-            float ang = i == 0 ? 0.05 : (i == 1 ? 0.42 : -0.5);
-            float alt = i == 0 ? 0.55 : (i == 1 ? 0.30 : 0.15);
-            float lam = Lp * lr;
-            float k = 6.2832 / lam;
-            float om = sqrt(9.81 * k);
-            float a = ola * 0.5 * alt * smoothstep(3.0, 9.0, lam / pie);
-            float sx = sin(ang); float sz = cos(ang);
-            float th = k * (sx * xw + sz * z) - om * t + fi * 2.1;
-            float s = sin(th); float c = cos(th);
-            h += a * s; dx += a * k * sx * c; dz += a * k * sz * c;
-        }
-        float swh = h; float swz = dz;
-        // mar de viento picado; la normal sale de diferencias finitas al tamaño del píxel (así se filtra solo)
-        float amp0 = 0.03 + pic * 0.62 + ola * 0.02;
-        float pico0 = 3.0 + pic * 2.5;
+        float3 punto = dir * dist;
+        float xw = punto.x;
+        float z = punto.z;
+        // lo que mide un píxel sobre el agua; el estiramiento rasante se limita, porque una ola cercana
+        // vista de frente no está rasante aunque el rayo vaya casi horizontal
+        float estira = clamp(0.62 * W / (1.15 * (H - hz) * max(-dir.y, 0.001)), 1.0, 4.0);
+        float pie = dist * 1.15 / W * estira;
         float e = max(pie * 0.75, 0.02);
         float2 pw = float2(xw, z);
+        // las olas grandes y su pendiente
+        float g0 = grandes(pw, pie);
+        float gx = grandes(pw + float2(e, 0.0), pie);
+        float gz = grandes(pw + float2(0.0, e), pie);
+        float dx = (gx - g0) / e;
+        float dz = (gz - g0) / e;
+        float swh = g0; float swz = dz;
+        // el picado encima; la normal sale de diferencias finitas al tamaño del píxel (así se filtra solo)
+        float amp0 = 0.03 + pic * 0.62 + ola * 0.02;
+        float pico0 = 3.0 + pic * 2.5;
         float h0 = viento(pw, pie, amp0, pico0);
         float hx = viento(pw + float2(e, 0.0), pie, amp0, pico0);
         float hz2 = viento(pw + float2(0.0, e), pie, amp0, pico0);
         dx += (hx - h0) / e;
         dz += (hz2 - h0) / e;
-        h += h0;
         float corta = h0 / (amp0 * 1.4 + 0.0001);
         float3 nrm = normalize(float3(-dx, 1.0, -dz));
-        float3 vista = normalize(float3(xw, -hc, z));
+        float3 vista = dir;
         float d = dot(vista, nrm);
         float3 r = vista - 2.0 * d * nrm;
         float fres = 0.02 + 0.98 * pow(cl(1.0 + d), 5.0);
         float refl = cieloEn(asin(cl(r.y)) * 1.6);
         // el agua profunda deja pasar luz por las crestas: se aclaran desde adentro
-        float atenua = exp(-z / 70.0);
+        float atenua = exp(-dist / 70.0);
         float hondo = 0.065 + 0.03 * luz + cl(dot(nrm, normalize(float3(0.1, 0.6, 1.0)))) * 0.025;
         float traslucido = cl(h0 / (amp0 + 0.0001) - 0.55) * (0.06 + pic * 0.04) * atenua;
         float cresta = swh / (ola * 0.5 + 0.05);
+        // las puntas de las olas altas no son espejos del cielo: el agua es gruesa y oscura, y en la cresta fina
+        // la luz la atraviesa con un azul propio. Así la ola se recorta contra el cielo en vez de fundirse con él.
+        float punta = cl(cresta * 0.5 + 0.5) * cl(ola / 5.0);
+        fres = min(fres, 1.0 - 0.5 * punta);
+        refl = mix(refl, refl * 0.82, punta);
+        traslucido += cl(cresta - 0.35) * 0.06 * cl(ola / 5.0) * (0.5 + 0.5 * luz);
         float cuerpo = hondo + cl(cresta * 0.5 + 0.5) * (0.03 + pic * 0.05);
         lum = cuerpo * (1.0 - fres) + refl * fres + traslucido;
         // el lomo del mar de fondo: espaldas iluminadas, frentes en sombra; más marcado en temporal
         float lomo = cl(ola / 5.0) * (1.0 + pic * 0.8);
         lum += cl(0.5 + swz * 6.0) * 0.11 * lomo - 0.055 * lomo;
+        // mar de fondo: con poco viento, las espaldas largas del oleaje se leen como bandas de luz
+        lum += (cl(0.5 + swz * 9.0) - 0.5) * 0.16 * cl(ola / 5.0) * cl(1.0 - pic * 2.5);
         // el sol (o la luna) velado deja un camino de luz
-        float3 sol = normalize(float3(0.18, 0.10, 1.0));
-        lum += pow(cl(dot(r, sol)), 180.0) * (0.9 - nubes * 0.6) * (0.4 + 0.6 * luz + alba);
+        float3 sol = normalize(float3((solx - 0.5) * 1.15, max(solh, 0.02), 1.0));
+        float brilla = cl(dot(r, sol));
+        float caminoSol = pow(brilla, 120.0) * (0.9 - nubes * 0.6) * (0.15 + 0.85 * luz + alba);
+        float caminoLuna = pow(brilla, 420.0) * (0.9 - nubes * 0.6) * luna * 1.6;
+        lum += caminoSol + caminoLuna;
+        brilloSol = caminoSol * 0.8;
+        brilloLuna = caminoLuna * 0.8;
+        lum += luna * 0.025;
         if (pic > 0.28) {
-            // espuma: cabrilleo en las crestas y vetas largas que el viento estira hacia el horizonte
-            // la espuma nace donde las olas cortas coinciden con la cresta del mar de fondo
-            float parche = fbm(float2(xw * 0.9 + z * 0.2, z * 0.7 - t * 0.5));
-            float cresta01 = cl(cresta * 0.5 + 0.5);
-            float rompe = smoothstep(1.0, 1.3, corta) * smoothstep(0.75, 1.0, cresta01 * 0.6 + parche * 0.6) * smoothstep(0.3, 0.8, pic);
-            float veta = smoothstep(0.9, 1.2, corta) * smoothstep(0.62, 0.8, parche) * smoothstep(0.5, 0.9, pic);
-            esp = cl(rompe + veta * 0.4) * cl(1.0 - pie * 0.35);
+            // espuma como en un mar de verdad:
+            // 1) rompientes: donde la ola grande está en su cresta y empinada, el agua revienta en blanco
+            // 2) mantos: lo que queda de una rompiente, deshilachado, en la espalda de la ola
+            // 3) vetas: con viento fuerte, líneas largas que apuntan hacia donde va el viento
+            // todo tiene textura de encaje (nunca manchas lisas) y se ilumina con la forma del agua
+            float empina = length(float2(gx - g0, gz - g0)) / e;
+            float alto = cl(g0 / (ola * 0.5 + 0.05) * 0.5 + 0.5);
+            // el encaje se estira en la dirección del viento: hilos y jirones, no lunares
+            float2 pe = float2(pw.x * 2.2, pw.y * 0.7) + float2(t * 0.6, t * 0.9);
+            float enc1 = 1.0 - abs(ruido(pe) * 2.0 - 1.0);
+            float enc2 = 1.0 - abs(ruido(pe * 2.7 + 5.3) * 2.0 - 1.0);
+            float encaje = cl(enc1 * 0.7 + enc2 * 0.45 - 0.25);
+            // la textura fina se desvanece en la distancia (lejos, la espuma se ve como un velo)
+            encaje = mix(encaje, 0.55, cl(pie * 0.8));
+            // revienta en la cara empinada, justo bajo la cresta, no encima de ella
+            float rompe = smoothstep(0.62, 0.85, alto) * smoothstep(0.35, 0.65, empina) * smoothstep(0.35, 0.8, pic);
+            rompe *= smoothstep(0.45, 0.75, encaje + corta * 0.2);
+            rompe *= smoothstep(0.5, 0.72, fbm(pw * 0.045 + float2(t * 0.04, -t * 0.03)));
+            // lo que queda de la rompiente baja por la espalda de la ola, ralo
+            float manto = smoothstep(0.25, 0.45, alto) * smoothstep(0.75, 0.55, alto) * smoothstep(0.58, 0.78, fbm(pw * 0.11 + float2(0.0, -t * 0.12))) * smoothstep(0.6, 1.0, pic);
+            manto *= smoothstep(0.5, 0.9, encaje) * 0.4;
+            float rv = ruido(float2(xw * 0.55 + z * 0.08, z * 0.035 - t * 0.25) + float2(4.1, 8.3));
+            float veta = smoothstep(0.88, 0.98, 1.0 - abs(rv * 2.0 - 1.0)) * smoothstep(0.65, 1.0, pic) * smoothstep(30.0, 90.0, dist);
+            veta *= (0.35 + 0.65 * encaje) * smoothstep(0.8, 0.95, nrm.y);
+            esp = cl(rompe + manto + veta * 0.5) * cl(1.0 - pie * 0.25);
+            // la espuma también tiene luz y sombra: más clara de cara al cielo, gris en las caras que no lo ven
+            esp *= 0.65 + 0.35 * cl(nrm.y * 1.4 - 0.2);
         }
         // rocío en temporal
         lum += (0.30 - lum) * pic * 0.18 * cl(1.0 - v * 1.5);
+        // en días cubiertos el mar refleja ese cielo plomizo
+        gris = nubes * nubes * 0.45 * fres + nubes * nubes * 0.18;
         // distancia: el mar se pierde en la bruma
-        float nb = 1.0 - exp(-z / (vis * 450.0 + 30.0));
+        float nb = 1.0 - exp(-dist / (vis * 450.0 + 30.0));
         float bruma = cieloEn(0.0) * 0.95 + cl(1.0 - vis * 0.5) * 0.16;
         lum += (bruma - lum) * nb;
         esp *= 1.0 - nb;
@@ -217,12 +362,51 @@ half4 main(float2 fragCoord) {
         lum += gota * 0.07 * cl(fract(q.y) * 1.5);
     }
 
+    // nieve: cinco capas; las lejanas son finas y se funden en la bruma, las cercanas grandes y desenfocadas.
+    // Cada copo cae inclinado por el viento, se mece y deja una estela corta (como en una foto a 1/30).
+    if (nieve > 0.01) {
+        float copos = 0.0;
+        float soplo = 0.35 + pic * 0.9;
+        for (int k = 0; k < 5; k++) {
+            float fk = float(k);
+            float cerca = fk / 4.0;
+            float esc = mix(70.0, 9.0, cerca);
+            float vel = mix(0.9, 3.2, cerca);
+            float2 uv = float2(x, y) / W * esc;
+            // el viento inclina la caída
+            uv.x += uv.y * soplo * 0.45;
+            float2 q = uv + float2(-t * vel * soplo * 0.6, -t * vel);
+            float2 c = floor(q);
+            float2 f = fract(q) - 0.5;
+            float h = hash(c + fk * 13.0);
+            float2 o = float2(hash(c + 3.1 + fk), hash(c + 5.7 + fk)) - 0.5;
+            // se mece de lado a lado
+            o.x += sin(t * (1.0 + h * 2.0) + h * 6.28) * 0.18;
+            float2 dd = f - o * 0.7;
+            dd.y *= 0.55; // estela vertical corta
+            float r = mix(0.035, 0.14, cerca) * (0.6 + h * 0.6);
+            float forma = smoothstep(r, r * mix(0.2, 0.0, cerca), length(dd));
+            float hay = step(1.0 - nieve * mix(0.55, 0.22, cerca), hash(c + fk * 7.0 + 1.3));
+            copos += forma * hay * mix(0.35, 0.55, cerca);
+        }
+        // el aire se pone blanco y el mar pierde contraste
+        lum = mix(lum, 0.5, nieve * 0.28);
+        lum += copos * 0.6;
+    }
+
     // noche: la misma lámina, más hundida
     lum *= 0.62 + 0.38 * luz + alba * 0.1;
-    lum = pow(cl(lum), 1.12) * 1.04;
+    lum = pow(cl(lum), 1.12 - 0.35 * luz) * (1.04 + 0.32 * luz) + 0.05 * luz;
     half3 col = tono(lum);
     // la espuma es crema, no azul: se pinta encima del tono
     col = mix(col, mix(half3(0.30, 0.42, 0.52), half3(0.93, 0.89, 0.81), half(luz)), half(esp * 0.8));
+    // las nubes y el mar cubierto, en gris pizarra (apenas azulado); de noche casi no se nota
+    half luma = dot(col, half3(0.30, 0.55, 0.15));
+    half3 pizarra = half3(luma * 1.10 + 0.035, luma * 1.12 + 0.04, luma * 1.16 + 0.05);
+    col = mix(col, pizarra, half(cl(gris) * (0.25 + 0.55 * luz)));
+    // el sol calienta lo que toca; la luna lo enfría
+    col = mix(col, half3(0.98, 0.91, 0.76), half(cl(brilloSol * 0.9)));
+    col = mix(col, half3(0.82, 0.89, 0.96), half(cl(brilloLuna * 0.9)));
     // hora azul: todo se tiñe de prusia
     col = mix(col, col * half3(0.78, 0.94, 1.22), half(azul));
     return half4(col, 1.0);

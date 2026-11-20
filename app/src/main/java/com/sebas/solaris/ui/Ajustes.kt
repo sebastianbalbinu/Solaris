@@ -73,6 +73,22 @@ fun Ajustes() {
                 Fila("Papel de día", NombresPapel[Tema.papel.coerceIn(0, 2)])
                 Fila("De noche", NombresOscuro[Tema.oscuro.coerceIn(0, 1)])
             }
+            Grupo("El mar del Drake") {
+                val prog = com.sebas.solaris.Paquete.progreso
+                val completo = com.sebas.solaris.Paquete.completo
+                val mb = com.sebas.solaris.Paquete.peso / 1_000_000
+                Parrafo(
+                    when {
+                        prog != null -> "Bajando el mar… " + (prog * 100).toInt() + " %"
+                        completo -> "El mar está entero en tu celular" + (if (mb > 0) " ($mb MB)" else "") + ": todos sus estados y las transiciones entre ellos."
+                        else -> "Los estados del mar y sus transiciones se bajan una vez" + (if (mb > 0) " (unos $mb MB)" else "") +
+                            ", solo con Wi-Fi. Mientras tanto se ve la calma."
+                    },
+                    Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                )
+                com.sebas.solaris.Paquete.error?.let { Parrafo(it, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp)) }
+                if (prog == null && !completo) FilaAccion("Bajarlo ahora, aunque no haya Wi-Fi") { com.sebas.solaris.Paquete.descargar(ahora = true) }
+            }
             GrupoBoyas { b -> boya = b; editandoBoya = true }
             GrupoNotion { paginas, archivos -> notion = paginas to archivos }
             Grupo("Voces y rumores") {

@@ -115,7 +115,7 @@ fun Grabacion() {
     if (visible) BackHandler { detener() }
 
     AnimatedVisibility(visible, enter = fadeIn(tween(300)), exit = fadeOut(tween(300))) {
-        Box(Modifier.fillMaxSize().background(Color(0xB802070F)).clickable(remember { MutableInteractionSource() }, null) {})
+        Box(Modifier.fillMaxSize().background(Color(0x8C02070F)).clickable(remember { MutableInteractionSource() }, null) {})
     }
     AnimatedVisibility(
         visible,
