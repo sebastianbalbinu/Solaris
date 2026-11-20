@@ -129,6 +129,25 @@ fun Ajustes() {
                     Modifier.padding(16.dp),
                 )
             }
+            Grupo("Solaris") {
+                val n = com.sebas.solaris.Marea.nueva
+                val prog = com.sebas.solaris.Marea.progreso
+                Fila("Versión", "0.2.${com.sebas.solaris.Marea.actual}")
+                Parrafo(
+                    when {
+                        prog != null -> "Bajando la marea nueva… " + (prog * 100).toInt() + " %"
+                        n != null && com.sebas.solaris.Marea.lista -> "La 0.2.$n ya está bajada. Al tocar, Android pide confirmar y se instala encima: tus notas, voces y la bóveda se quedan."
+                        n != null -> "Hay una versión nueva, la 0.2.$n."
+                        else -> com.sebas.solaris.Marea.mensaje ?: "Solaris se actualiza sola: una vez al día mira si hay marea nueva y, con Wi-Fi, la deja lista."
+                    },
+                    Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                )
+                val ctxMarea = androidx.compose.ui.platform.LocalContext.current
+                if (prog == null) {
+                    if (n != null) FilaAccion(if (com.sebas.solaris.Marea.lista) "Instalar la 0.2.$n" else "Bajar e instalar la 0.2.$n") { com.sebas.solaris.Marea.tocar(ctxMarea) }
+                    else FilaAccion("Buscar actualización") { com.sebas.solaris.Marea.revisar(forzar = true) }
+                }
+            }
             Grupo("Este celular") {
                 FilaAccion("Salir de este celular", Color(0xFFE0745F)) { salir = true }
             }

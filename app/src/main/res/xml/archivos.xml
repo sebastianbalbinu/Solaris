@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Solo la carpeta de lo que se comparte (las láminas en PDF); nada más de la casa. -->
+<!-- Solo lo que se comparte (las láminas en PDF) y la actualización; nada más de la casa. -->
 <paths>
     <cache-path name="compartir" path="compartir/" />
+    <!-- la marea nueva: la APK de la actualización, para el instalador de Android -->
+    <cache-path name="marea" path="marea/" />
 </paths>

@@ -279,3 +279,33 @@ fun HojaNotion(paginas: List<Notion.Pagina>?, archivos: Map<String, ByteArray>, 
         }
     }
 }
+
+// ---------------- la marea nueva ----------------
+
+/** Una línea discreta bajo el saludo cuando hay una versión nueva de Solaris. Tocarla la instala. */
+@Composable
+fun AvisoMarea(modifier: Modifier = Modifier) {
+    val ctx = LocalContext.current
+    val n = com.sebas.solaris.Marea.nueva
+    val prog = com.sebas.solaris.Marea.progreso
+    AnimatedVisibility(n != null, modifier, enter = fadeIn(tween(1400)), exit = fadeOut(tween(900))) {
+        val forma = RoundedCornerShape(50)
+        Row(
+            Modifier.padding(top = 10.dp).clip(forma).background(Color(0x330B1620)).border(1.dp, Color(0x33B9C6CC), forma)
+                .clickable { Sonidos.tic(); com.sebas.solaris.Marea.tocar(ctx) }
+                .padding(horizontal = 12.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(8.dp).clip(CircleShape).background(Azules.Crema.copy(alpha = if (prog != null) 0.4f else 0.9f)))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                when {
+                    prog != null -> "llega la marea nueva · " + (prog * 100).toInt() + " %"
+                    com.sebas.solaris.Marea.lista -> "marea nueva 0.2.$n · toca para instalar"
+                    else -> "hay marea nueva · 0.2.$n"
+                },
+                color = Azules.Crema.copy(alpha = 0.9f), fontFamily = Sans, fontSize = 13.sp, maxLines = 1,
+            )
+        }
+    }
+}
