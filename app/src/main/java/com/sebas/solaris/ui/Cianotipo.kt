@@ -139,7 +139,8 @@ object Corriente {
                 }.randomOrNull()
             }
         }
-        objetivo = deriva ?: real
+        // escribir manda: rápido y sentido agita el mar; lento y con pausas lo aquieta
+        objetivo = if (Ritmo.activo) Ritmo.estado(!m.esDia) else deriva ?: real
     }
 }
 
@@ -243,7 +244,6 @@ fun MarCianotipo(modifier: Modifier, vivo: Boolean = true) {
     val ctx = LocalContext.current
     val grano = remember { ShaderBrush(ImageShader(teselaDeGrano(), TileMode.Repeated, TileMode.Repeated)) }
     var granoDesfase by remember { mutableStateOf(Offset.Zero) }
-    var destello by remember { mutableStateOf(0f) }
     var reloj by remember { mutableStateOf(0f) }
     var temblor by remember { mutableStateOf(0f) }
     var visita by remember { mutableStateOf<Visita?>(null) }
@@ -276,17 +276,12 @@ fun MarCianotipo(modifier: Modifier, vivo: Boolean = true) {
         }
     }
 
-    // el grano salta 12 veces por segundo; relámpagos, temblor de la voz y visitas
+    // el grano salta 12 veces por segundo; temblor de la voz y visitas
     LaunchedEffect(vivo) {
         var vuelta = 0
         while (isActive && vivo) {
             granoDesfase = Offset(Random.nextFloat() * 256f, Random.nextFloat() * 256f)
             reloj += 0.083f
-            destello *= exp(-0.083f * 7f)
-            if (destello < 0.01f) destello = 0f
-            val v = Corriente.visible
-            val rayos = (v == "temporal" || v == "temporal_noche") && (Clima.mar.rayos || Random.nextFloat() < 0.4f)
-            if (rayos && Random.nextFloat() < 0.083f * 0.05f) destello = 0.8f + Random.nextFloat() * 0.2f
             val nivel = if (Nav.grabando && Grabadora.grabando && !Grabadora.pausado) Grabadora.nivel.coerceIn(0f, 1f) else 0f
             temblor += (nivel - temblor) * 0.35f
             if (vuelta++ % 360 == 0) visita = visita?.takeIf { !it.terminada(reloj) } ?: nuevaVisita(reloj)
@@ -315,10 +310,10 @@ fun MarCianotipo(modifier: Modifier, vivo: Boolean = true) {
                 }
             },
         )
+        Tormenta(mareas.jugador, vivo)
         Canvas(Modifier.fillMaxSize()) {
             if (Corriente.visible in Despejados) visita?.let { dibujarVisita(it, reloj, Clima.mar.esDia) }
             if (noche > 0f) drawRect(Color.Black.copy(alpha = noche))
-            if (destello > 0f) drawRect(Color(0xFFDCE6EA).copy(alpha = destello * 0.22f))
             translate(-granoDesfase.x, -granoDesfase.y) {
                 drawRect(grano, topLeft = Offset.Zero, size = Size(size.width + 256f, size.height + 256f))
             }

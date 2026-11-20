@@ -99,10 +99,10 @@ fun Solaris(act: MainActivity) {
     }
 
     Box(Modifier.fillMaxSize().background(if (enCasa) Color.Black else p.fondo)) {
-        // un solo mar, debajo de todo: la entrada y la orilla son el mismo; se queda quieto mientras uno escribe
+        // un solo mar, debajo de todo: la entrada y la orilla son el mismo; sigue vivo mientras uno escribe (escribir lo mueve)
         if (enCasa) {
             val enSuperficie = Nav.listaOrilla.firstVisibleItemIndex == 0
-            MarCianotipo(Modifier.fillMaxSize(), vivo = !(Casa.abierta && (encima || !enSuperficie)))
+            MarCianotipo(Modifier.fillMaxSize(), vivo = !Casa.abierta || Nav.borrador != null || (!encima && enSuperficie))
         }
         when {
             !Casa.conectada -> Conectar()

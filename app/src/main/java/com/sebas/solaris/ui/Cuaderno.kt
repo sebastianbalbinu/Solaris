@@ -110,11 +110,11 @@ fun Editor(b: Borrador) {
     }
     BackHandler(enabled = !hojaLetra && !hojaOpciones && fotoAbierta == null) { guardarYSalir() }
 
-    // la lámina: arriba se ve el mar quieto, que se funde con el papel
+    // la lámina: arriba se ve el mar, y a través del papel se adivinan sus relámpagos
     Box(Modifier.fillMaxSize()) {
         Box(
             Modifier.fillMaxSize().background(
-                Brush.verticalGradient(0f to Color.Transparent, 0.10f to p.fondo.copy(alpha = 0.35f), 0.24f to p.fondo, 1f to p.fondo)
+                Brush.verticalGradient(0f to Color.Transparent, 0.10f to p.fondo.copy(alpha = 0.4f), 0.28f to p.fondo.copy(alpha = 0.8f), 0.5f to p.fondo.copy(alpha = 0.88f), 1f to p.fondo.copy(alpha = 0.9f))
             )
         )
     Box(Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
@@ -152,7 +152,7 @@ fun Editor(b: Borrador) {
                 val formatoTexto = remember(Tema.esNoche) { FormatoSencillo(p.texto2.copy(alpha = 0.45f), p.acento, p.texto2) }
                 BasicTextField(
                     value = cuerpo,
-                    onValueChange = { nuevo -> val v = continuarLista(cuerpo, nuevo); cuerpo = v; b.texto = v.text },
+                    onValueChange = { nuevo -> if (nuevo.text != cuerpo.text) Ritmo.tecla(kotlin.math.abs(nuevo.text.length - cuerpo.text.length)); val v = continuarLista(cuerpo, nuevo); cuerpo = v; b.texto = v.text },
                     textStyle = estilo,
                     cursorBrush = SolidColor(p.acento),
                     visualTransformation = formatoTexto,
