@@ -144,6 +144,8 @@ private fun Superficie(modifier: Modifier) {
             Spacer(Modifier.height(44.dp))
             Text(a, color = Azules.Crema, fontFamily = Serif, fontSize = 46.sp, lineHeight = 48.sp)
             Text(b, color = Azules.Crema, fontFamily = Serif, fontStyle = FontStyle.Italic, fontSize = 46.sp, lineHeight = 48.sp)
+            Spacer(Modifier.height(18.dp))
+            FlotanBoyas()
         }
 
         // un eco emerge cerca del horizonte, se queda un rato y se hunde

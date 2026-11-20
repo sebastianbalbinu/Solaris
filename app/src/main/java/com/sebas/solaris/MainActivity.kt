@@ -25,6 +25,7 @@ class MainActivity : FragmentActivity() {
         Tema.iniciar(this)
         Clima.iniciar(this)
         Sonidos.iniciar(this)
+        Boyas.iniciar(this)
         recibir(intent)
         setContent { Solaris(this) }
     }

@@ -41,11 +41,14 @@ fun Ajustes() {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var aviso by remember { mutableStateOf<String?>(null) }
+    var editandoBoya by remember { mutableStateOf(false) }
+    var boya by remember { mutableStateOf<com.sebas.solaris.Boya?>(null) }
+    var notion by remember { mutableStateOf<Pair<List<com.sebas.solaris.Notion.Pagina>, Map<String, ByteArray>>?>(null) }
     val carpeta = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         Casa.pausarCandado = false
         if (uri != null) scope.launch { aviso = "Exportando…"; aviso = Exportador.exportar(ctx, uri) }
     }
-    BackHandler(enabled = !salir && !letra) { Nav.ajustes = false }
+    BackHandler(enabled = !salir && !letra && !editandoBoya && notion == null) { Nav.ajustes = false }
 
     Box(Modifier.fillMaxSize().background(p.fondo).systemBarsPadding()) {
         Column(
@@ -70,6 +73,8 @@ fun Ajustes() {
                 Fila("Papel de día", NombresPapel[Tema.papel.coerceIn(0, 2)])
                 Fila("De noche", NombresOscuro[Tema.oscuro.coerceIn(0, 1)])
             }
+            GrupoBoyas { b -> boya = b; editandoBoya = true }
+            GrupoNotion { paginas, archivos -> notion = paginas to archivos }
             Grupo("Voces y rumores") {
                 FilaAccion("Exportar todas a una carpeta") { Casa.pausarCandado = true; carpeta.launch(null) }
                 if (aviso != null) Parrafo(aviso ?: "", Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
@@ -115,6 +120,8 @@ fun Ajustes() {
         }
 
         HojaLetra(letra) { letra = false }
+        HojaBoya(editandoBoya, boya) { editandoBoya = false }
+        HojaNotion(notion?.first, notion?.second ?: emptyMap()) { notion = null }
 
         Hoja(salir, { salir = false }) {
             Text("¿Salir de este celular?", color = p.texto, fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 17.sp)

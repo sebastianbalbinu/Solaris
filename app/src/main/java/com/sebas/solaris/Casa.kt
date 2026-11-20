@@ -533,6 +533,37 @@ object Casa {
     // ---------------- fotos ----------------
 
     /** Reduce la foto, la endereza, la cifra y la guarda. Devuelve su id. */
+    /** Lo mismo que [agregarFoto], para una imagen que ya está en memoria (por ejemplo, dentro de un zip). */
+    suspend fun agregarFotoBytes(datos: ByteArray): String? = withContext(Dispatchers.IO) {
+        val m = maestra ?: return@withContext null
+        try {
+            val limites = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(datos, 0, datos.size, limites)
+            var muestra = 1
+            while (max(limites.outWidth, limites.outHeight) / (muestra * 2) >= 1600) muestra *= 2
+            val original = BitmapFactory.decodeByteArray(datos, 0, datos.size, BitmapFactory.Options().apply { inSampleSize = muestra })
+                ?: return@withContext null
+            val escala = min(1f, 1600f / max(original.width, original.height))
+            val ajustada = Bitmap.createBitmap(original, 0, 0, original.width, original.height, Matrix().apply { postScale(escala, escala) }, true)
+            val salida = ByteArrayOutputStream()
+            ajustada.compress(Bitmap.CompressFormat.JPEG, 82, salida)
+            val id = Item.nuevoId()
+            archivoFoto(id).writeBytes(Crypto.sellar(m, salida.toByteArray()))
+            agregar("fotos_pendientes", id)
+            id
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** Un escrito que llega de afuera (Notion), con su fecha original. Si ya se había traído, se reemplaza. */
+    fun importarEscrito(id: String, titulo: String, texto: String, fotos: List<String>, creado: Long) {
+        val previo = porId(id)
+        if (previo != null && previo.photos.isNotEmpty()) olvidarFotos(previo.photos)
+        guardar(Item(id = id, kind = "entrada", room = null, title = titulo, text = texto, photos = fotos,
+            color = 0, created = creado, updated = System.currentTimeMillis()))
+    }
+
     suspend fun agregarFoto(uri: Uri): String? = withContext(Dispatchers.IO) {
         val m = maestra ?: return@withContext null
         try {
