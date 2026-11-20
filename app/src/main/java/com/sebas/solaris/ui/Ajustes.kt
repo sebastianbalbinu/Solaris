@@ -85,6 +85,17 @@ fun Ajustes() {
                         )
                     }
                 }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Proteger la pantalla", color = p.texto, fontFamily = Sans, fontSize = 16.sp)
+                        Text("Bloquea las capturas y oculta la estación en apps recientes", color = p.texto2, fontFamily = Sans, fontSize = 13.sp)
+                    }
+                    Switch(
+                        checked = Tema.protegerPantalla,
+                        onCheckedChange = { Tema.fijarProteger(it); Sonidos.tic() },
+                        colors = SwitchDefaults.colors(checkedTrackColor = Azules.Cianotipo, checkedThumbColor = Color.White),
+                    )
+                }
                 FilaAccion("Cambiar PIN") { Nav.cambiarPin = true }
                 FilaAccion("Cerrar la estación ahora") { Casa.cerrar() }
             }

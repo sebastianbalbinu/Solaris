@@ -84,6 +84,9 @@ fun Solaris(act: MainActivity) {
         else -> true
     }
     SideEffect {
+        // capturas permitidas salvo que se pida proteger la pantalla
+        if (Tema.protegerPantalla) act.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+        else act.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
         val c = WindowCompat.getInsetsController(act.window, vista)
         c.isAppearanceLightStatusBars = !pantallaOscura
         c.isAppearanceLightNavigationBars = !pantallaOscura

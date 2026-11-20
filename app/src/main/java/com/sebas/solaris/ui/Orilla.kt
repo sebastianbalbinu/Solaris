@@ -129,7 +129,6 @@ private fun Superficie(modifier: Modifier) {
     Box(modifier.fillMaxWidth()) {
         // velos para que la letra se lea sobre el cielo y sobre el agua
         Box(Modifier.fillMaxWidth().height(320.dp).background(Brush.verticalGradient(listOf(Color(0x9902070F), Color.Transparent))))
-        Box(Modifier.fillMaxWidth().height(260.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x8802070F)))))
 
         Column(Modifier.statusBarsPadding().padding(horizontal = 24.dp).padding(top = 14.dp)) {
             Row(verticalAlignment = Alignment.Top) {
@@ -154,7 +153,10 @@ private fun Superficie(modifier: Modifier) {
             Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 132.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text("desliza hacia abajo para recordar", color = Azules.Bruma, fontFamily = Sans, fontSize = 13.sp)
+            Text(
+                "desliza hacia abajo para recordar", color = Azules.Espuma, fontFamily = Sans, fontSize = 13.sp,
+                style = TextStyle(shadow = androidx.compose.ui.graphics.Shadow(Color(0xCC02070F), Offset(0f, 1f), 10f)),
+            )
             Spacer(Modifier.height(6.dp))
             Canvas(Modifier.size(18.dp, 10.dp)) {
                 val g = 1.5.dp.toPx()
@@ -200,7 +202,7 @@ private fun BotonUnico(modifier: Modifier) {
     val forma = RoundedCornerShape(50)
     Row(
         modifier.navigationBarsPadding().padding(bottom = 20.dp)
-            .clip(forma).background(Color(0x990B1620)).border(1.dp, Color(0x26B9C6CC), forma)
+            .clip(forma).background(Color(0x400B1620)).border(1.dp, Color(0x2EB9C6CC), forma)
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

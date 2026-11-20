@@ -139,6 +139,15 @@ object Tema {
     /** Tono del papel de día: 0 claro, 1 tibio, 2 penumbra. */
     var papel by mutableIntStateOf(1)
         private set
+    /** Si se bloquean las capturas de pantalla y la vista previa en "apps recientes". */
+    var protegerPantalla by mutableStateOf(false)
+        private set
+
+    fun fijarProteger(si: Boolean) {
+        protegerPantalla = si
+        prefs.edit().putBoolean("proteger_pantalla", si).apply()
+    }
+
     /** Modo oscuro: 0 abismo, 1 cianotipo. */
     var oscuro by mutableIntStateOf(0)
         private set
@@ -151,6 +160,7 @@ object Tema {
         colorNoche = prefs.getInt("color_noche", 0)
         papel = prefs.getInt("papel", 1)
         oscuro = prefs.getInt("oscuro", 0)
+        protegerPantalla = prefs.getBoolean("proteger_pantalla", false)
     }
 
 
