@@ -44,7 +44,6 @@ import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
 import com.sebas.solaris.Clima
-import com.sebas.solaris.Grabadora
 import com.sebas.solaris.Mar
 import com.sebas.solaris.Paquete
 import com.sebas.solaris.R
@@ -54,6 +53,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Calendar
 import kotlin.math.abs
@@ -66,9 +66,8 @@ import kotlin.random.Random
  * El mar del Drake, horneado: cada estado es un bucle de video y entre vecinos hay transiciones de verdad
  * (herramientas/hornear.py). El reproductor encadena bucle → transición → bucle sin cortes, siguiendo el
  * camino más corto por el mapa de vecinos (de espejo a temporal se pasa por calma y mar bravo, como en la realidad).
- * Qué estado toca lo deciden los datos reales del Drake; encima corre un ánimo que deriva hacia estados vecinos.
- * Encima del video, en alta: grano, viñeta, relámpagos, las visitas (témpano, albatros, barco), la respiración
- * y el temblor de la voz.
+ * Qué estado toca lo deciden solo los datos reales del Drake. Encima del video: grano, viñeta y,
+ * cuando allá hay tormenta eléctrica, relámpagos.
  */
 
 // ---------------- los estados ----------------
@@ -81,14 +80,17 @@ val NombresEstado = mapOf(
     "luna_llena" to "LUNA LLENA", "aurora" to "AURORA AUSTRAL", "temporal_noche" to "TEMPORAL NOCTURNO",
 )
 private val Nocturnos = setOf("noche", "luna_llena", "aurora", "temporal_noche")
-/** Donde el horizonte se ve limpio y pueden aparecer visitas. */
-private val Despejados = setOf("calma", "espejo", "mar_de_fondo", "alba", "ocaso", "hora_azul", "noche", "luna_llena", "aurora")
 
-/** El estado que dicen los datos reales del Drake, sin ánimo encima. */
+/**
+ * El estado que dicen los datos reales del Drake. Cada estado horneado tiene su altura de ola
+ * (espejo 0,7 m, calma 2,4 m, mar de fondo 6 m largo y liso, mar bravo 7 m picado, temporal 10 m):
+ * se elige el más parecido a lo que de verdad hay, no el más tranquilo.
+ */
 fun estadoReal(m: Mar, ahora: Long = System.currentTimeMillis()): String {
     val h = m.horaNumero(ahora)
-    val tormenta = m.viento >= 34 || m.ola >= 6
-    val bravo = m.viento >= 22 || m.ola >= 4
+    val tormenta = m.viento >= 34 || m.ola >= 7.5
+    val bravo = m.viento >= 22 || m.ola >= 4.5
+    val gruesa = m.ola >= 3.0 || m.viento >= 16
     return when {
         tormenta && !m.esDia -> "temporal_noche"
         tormenta -> "temporal"
@@ -96,31 +98,30 @@ fun estadoReal(m: Mar, ahora: Long = System.currentTimeMillis()): String {
         m.lluvia > 2.0 && m.esDia -> "chubasco"
         bravo && !m.esDia -> "temporal_noche"
         bravo -> "mar_bravo"
+        m.visibilidad < 1.5 && m.esDia -> "niebla"
+        // con mar gruesa el cielo de la hora no tapa el oleaje: se ve el mar como está
+        gruesa && m.esDia -> "mar_de_fondo"
         abs(h - m.salida) < 0.75 -> "alba"
         h > m.puesta - 0.4 && h < m.puesta + 0.5 -> "ocaso"
         h >= m.puesta + 0.5 && h < m.puesta + 1.2 -> "hora_azul"
         !m.esDia && m.kp >= 5 && m.nubes < 60 -> "aurora"
         !m.esDia && m.luna(ahora) > 0.75 && m.nubes < 75 -> "luna_llena"
         !m.esDia -> "noche"
-        m.visibilidad < 2.0 -> "niebla"
-        m.periodo >= 14 && m.viento < 12 -> "mar_de_fondo"
-        m.viento < 5 && m.ola < 1.2 -> "espejo"
+        m.viento < 6 && m.ola < 1.3 -> "espejo"
         else -> "calma"
     }
 }
 
 /**
- * La corriente interior: sobre el estado real deriva un ánimo que se va, a ratos, a un estado vecino
- * (nunca a uno imposible: de noche no hay alba; con temporal real no hay espejo) y luego vuelve.
+ * La corriente: el mar es el del Drake y nada más. No lo mueve la escritura, ni la respiración, ni la voz.
+ * Va hacia el estado real, pero un paso a la vez y quedándose un buen rato en cada uno, como el mar de verdad.
  */
 object Corriente {
-    /** Hacia dónde quiere ir el mar ahora. */
+    /** Hacia dónde va el mar (el estado real del Drake). */
     var objetivo by mutableStateOf("calma")
         private set
     /** Lo que se está viendo (lo pone el reproductor cuando un bucle empieza). */
     var visible by mutableStateOf("calma")
-    private var deriva: String? = null
-    private var restante = 0.0
     private var iniciada = false
 
     /** Nombre del mar que se ve. */
@@ -132,32 +133,21 @@ object Corriente {
         iniciada = true
         objetivo = estadoReal(m)
         visible = objetivo
-        restante = 60.0 + Random.nextDouble() * 120.0
     }
 
-    fun avanzar(m: Mar, dt: Double) {
+    fun avanzar(m: Mar) {
         iniciar(m)
-        val real = estadoReal(m)
-        restante -= dt
-        if (restante <= 0) {
-            restante = 45.0 + Random.nextDouble() * 200.0
-            deriva = if (deriva != null || Random.nextDouble() < 0.4) null else {
-                // un vecino del estado real que tenga sentido a esta hora
-                val noche = !m.esDia
-                Paquete.vecinos(real).filter { v ->
-                    (v in Nocturnos) == noche && v !in setOf("alba", "ocaso", "hora_azul", "aurora", "luna_llena")
-                }.randomOrNull()
-            }
-        }
-        // escribir manda: rápido y sentido agita el mar; lento y con pausas lo aquieta
-        objetivo = if (Ritmo.activo) Ritmo.estado(!m.esDia) else deriva ?: real
+        objetivo = estadoReal(m)
     }
 }
 
-/** Lo que el usuario le hace al mar: respirar con él y hablarle. */
+/** Si se está respirando (la pantalla de respirar); el mar no cambia por eso. */
 object Oleaje {
     var respirando by mutableStateOf(false)
 }
+
+/** Cuánto se queda el mar en un estado antes de dar el siguiente paso hacia el real. */
+private const val PERMANENCIA_MS = 20 * 60 * 1000L
 
 // ---------------- el reproductor ----------------
 
@@ -170,6 +160,8 @@ private class Mareas(private val ctx: android.content.Context) {
     var actual: String? = null
         private set
     private var enCamino = false
+    /** Cuándo empezó el estado que se ve (para quedarse en él un buen rato). */
+    private var llegada = 0L
 
     init {
         jugador.addListener(object : Player.Listener {
@@ -187,7 +179,7 @@ private class Mareas(private val ctx: android.content.Context) {
                     val i = jugador.currentMediaItemIndex
                     if (i > 0) jugador.removeMediaItems(0, i)
                     enCamino = false
-                    seguir()
+                    llegada = System.currentTimeMillis()
                 }
             }
         })
@@ -209,6 +201,7 @@ private class Mareas(private val ctx: android.content.Context) {
             jugador.setMediaItem(item("bucle:$estado", f))
             actual = estado
             Corriente.visible = estado
+            llegada = System.currentTimeMillis()
         } else {
             jugador.setMediaItem(respaldo())
             actual = null
@@ -228,6 +221,8 @@ private class Mareas(private val ctx: android.content.Context) {
             return
         }
         if (a == destino) return
+        // el mar no cambia de un momento a otro: se queda en cada estado antes de moverse
+        if (System.currentTimeMillis() - llegada < PERMANENCIA_MS) return
         val ruta = Paquete.camino(a, destino) ?: return
         val b = ruta.getOrNull(1) ?: return
         val tr = Paquete.transicion(a, b) ?: return
@@ -254,19 +249,14 @@ fun MarCianotipo(modifier: Modifier, vivo: Boolean = true) {
     val ctx = LocalContext.current
     val grano = remember { ShaderBrush(ImageShader(teselaDeGrano(), TileMode.Repeated, TileMode.Repeated)) }
     var granoDesfase by remember { mutableStateOf(Offset.Zero) }
-    var reloj by remember { mutableStateOf(0f) }
-    var temblor by remember { mutableStateOf(0f) }
-    var visita by remember { mutableStateOf<Visita?>(null) }
 
     val mareas = remember { Mareas(ctx) }
     var listo by remember { mutableStateOf(false) }
     var primerCuadro by remember { mutableStateOf(false) }
-    val aparece by animateFloatAsState(if (primerCuadro) 1f else 0f, tween(900), label = "aparece")
-    // mientras arranca se ve el último cuadro que se vio (no la calma de fábrica), así no hay salto
+    val aparece by animateFloatAsState(if (primerCuadro) 1f else 0f, tween(700), label = "aparece")
+    // mientras el video arranca se ve su primer cuadro exacto (el mismo con que empieza el bucle): no hay salto
     val ultimo = remember { File(ctx.filesDir, "mar/ultimo.jpg") }
-    val quieto = remember {
-        try { if (ultimo.exists()) BitmapFactory.decodeFile(ultimo.path)?.asImageBitmap() else null } catch (e: Exception) { null }
-    }
+    var quieto by remember { mutableStateOf(leerUltimo(ultimo)) }
     var lienzo by remember { mutableStateOf<TextureView?>(null) }
     DisposableEffect(Unit) {
         mareas.jugador.addListener(object : Player.Listener {
@@ -274,7 +264,7 @@ fun MarCianotipo(modifier: Modifier, vivo: Boolean = true) {
         })
         onDispose { mareas.soltar() }
     }
-    // al irse, se guarda el cuadro que se estaba viendo
+    // al irse, se guarda el cuadro que se estaba viendo (solo sirve si todavía no hay paquete)
     val ciclo = LocalLifecycleOwner.current
     DisposableEffect(ciclo) {
         val o = LifecycleEventObserver { _, e ->
@@ -290,77 +280,54 @@ fun MarCianotipo(modifier: Modifier, vivo: Boolean = true) {
         ciclo.lifecycle.addObserver(o)
         onDispose { ciclo.lifecycle.removeObserver(o) }
     }
-    // el primer estado se elige con el clima de ahora (se espera un momento al Drake), no con el de la última vez
+    // El mar arranca como está el Drake: el vigía lo dejó apuntado hace menos de media hora.
+    // Solo si esa lectura es vieja se espera un instante a la de ahora.
     LaunchedEffect(Unit) {
-        val pedido = CoroutineScope(Dispatchers.IO).async { Clima.actualizar() }
-        withTimeoutOrNull(2500) { pedido.await() }
+        if (!Clima.fresca) {
+            val pedido = CoroutineScope(Dispatchers.IO).async { Clima.actualizar() }
+            withTimeoutOrNull(1800) { pedido.await() }
+        }
         Corriente.iniciar(Clima.mar)
-        mareas.empezar(Corriente.objetivo)
+        val estado = Corriente.objetivo
+        withContext(Dispatchers.IO) { primerCuadroDe(estado) }?.let { quieto = it }
+        mareas.empezar(estado)
         listo = true
     }
     LaunchedEffect(vivo, listo) { mareas.jugador.playWhenReady = vivo && listo }
 
-    // la corriente avanza una vez por segundo; si el objetivo cambia, el mar emprende el camino
+    // una vez por minuto se mira el Drake; el mar va hacia él sin prisa
     LaunchedEffect(listo) {
         while (isActive && listo) {
-            Corriente.avanzar(Clima.mar, 1.0)
+            Corriente.avanzar(Clima.mar)
             mareas.seguir()
-            delay(1000)
+            delay(60_000)
         }
     }
     // cuando llega un archivo nuevo del paquete, el mar puede usarlo
     LaunchedEffect(Paquete.estados, listo) { if (listo) mareas.seguir() }
 
-    // respirar: el mar se aquieta y va más lento
-    val velocidad = if (Oleaje.respirando) 0.45f else 1f
-    LaunchedEffect(velocidad) {
-        val desde = mareas.jugador.playbackParameters.speed
-        for (i in 1..20) {
-            mareas.jugador.playbackParameters = PlaybackParameters(desde + (velocidad - desde) * i / 20f)
-            delay(60)
-        }
-    }
-
-    // el grano salta 12 veces por segundo; temblor de la voz y visitas
+    // el grano de la película salta 12 veces por segundo
     LaunchedEffect(vivo) {
-        var vuelta = 0
         while (isActive && vivo) {
             granoDesfase = Offset(Random.nextFloat() * 256f, Random.nextFloat() * 256f)
-            reloj += 0.083f
-            val nivel = if (Nav.grabando && Grabadora.grabando && !Grabadora.pausado) Grabadora.nivel.coerceIn(0f, 1f) else 0f
-            temblor += (nivel - temblor) * 0.35f
-            if (vuelta++ % 360 == 0) visita = visita?.takeIf { !it.terminada(reloj) } ?: nuevaVisita(reloj)
             delay(83)
         }
     }
 
     val noche = if (!Clima.mar.esDia && Corriente.visible !in Nocturnos) 0.4f else 0f
-    val efecto = remember { if (Build.VERSION.SDK_INT >= 33) try { RuntimeShader(AGUA_QUE_TIEMBLA) } catch (e: Exception) { null } else null }
 
     Box(modifier) {
-        if (quieto != null) Image(quieto, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        else Image(painterResource(R.drawable.mar_quieto), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        androidx.compose.animation.Crossfade(quieto, animationSpec = tween(600), label = "quieto") { q ->
+            if (q != null) Image(q, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            else Image(painterResource(R.drawable.mar_quieto), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        }
         AndroidView(
             factory = { c -> TextureView(c).also { tv -> lienzo = tv; MarVivo.lienzo = tv; conectar(tv, mareas.jugador) } },
-            modifier = Modifier.fillMaxSize().graphicsLayer {
-                // el video entra fundiéndose sobre el cuadro quieto
-                alpha = aparece
-                // la voz hace temblar el agua
-                if (Build.VERSION.SDK_INT >= 33 && efecto != null && temblor > 0.02f) {
-                    efecto.setFloatUniform("res", size.width, size.height)
-                    efecto.setFloatUniform("t", reloj)
-                    efecto.setFloatUniform("amp", temblor)
-                    renderEffect = RenderEffect.createRuntimeShaderEffect(efecto, "agua").asComposeRenderEffect()
-                } else {
-                    renderEffect = null
-                    // sin Android 13: un vaivén suave en vez de ondas
-                    translationY = sin(reloj * 9f) * temblor * 3f
-                }
-            },
+            // el video entra fundiéndose sobre su propio primer cuadro
+            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = aparece },
         )
-        Tormenta(mareas.jugador, vivo)
+        Tormenta(vivo)
         Canvas(Modifier.fillMaxSize()) {
-            if (Corriente.visible in Despejados) visita?.let { dibujarVisita(it, reloj, Clima.mar.esDia) }
             if (noche > 0f) drawRect(Color.Black.copy(alpha = noche))
             translate(-granoDesfase.x, -granoDesfase.y) {
                 drawRect(grano, topLeft = Offset.Zero, size = Size(size.width + 256f, size.height + 256f))
@@ -374,6 +341,19 @@ fun MarCianotipo(modifier: Modifier, vivo: Boolean = true) {
         }
     }
 }
+
+/** El primer cuadro del bucle de un estado: lo que el video va a mostrar al arrancar. */
+private fun primerCuadroDe(estado: String): ImageBitmap? {
+    val f = Paquete.bucle(estado) ?: return null
+    val r = android.media.MediaMetadataRetriever()
+    return try {
+        r.setDataSource(f.path)
+        r.getFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)?.asImageBitmap()
+    } catch (e: Exception) { null } finally { try { r.release() } catch (e: Exception) {} }
+}
+
+private fun leerUltimo(f: File): ImageBitmap? =
+    try { if (f.exists()) BitmapFactory.decodeFile(f.path)?.asImageBitmap() else null } catch (e: Exception) { null }
 
 /** Une el reproductor a la superficie y recorta el video al centro para llenar la pantalla. */
 private fun conectar(tv: TextureView, jugador: ExoPlayer) {
@@ -399,104 +379,10 @@ private fun conectar(tv: TextureView, jugador: ExoPlayer) {
 object MarVivo {
     var lienzo: TextureView? = null
     fun cuadro(): Bitmap? = try { lienzo?.takeIf { it.width > 0 }?.bitmap } catch (e: Exception) { null }
-}
-
-/** El agua tiembla con la voz: ondas que bajan desde el horizonte, más fuertes cerca. */
-private const val AGUA_QUE_TIEMBLA = """
-uniform shader agua;
-uniform float2 res;
-uniform float t;
-uniform float amp;
-half4 main(float2 p) {
-    float y = p.y / res.y;
-    float bajo = smoothstep(0.34, 0.6, y);
-    float ondas = sin(p.y * 0.07 - t * 9.0) * 0.6 + sin(p.x * 0.025 + p.y * 0.04 + t * 6.0) * 0.4;
-    float2 q = p + float2(ondas * 7.0, ondas * 2.5) * amp * bajo;
-    return agua.eval(q);
-}
-"""
-
-// ---------------- las visitas ----------------
-
-/** Algo que pasa por el horizonte: raro, breve y propio del lugar. */
-private class Visita(val tipo: Int, val desde: Float, val dura: Float, val x0: Float, val sentido: Float, val alto: Float) {
-    fun terminada(t: Float) = t > desde + dura
-    fun avance(t: Float) = ((t - desde) / dura).coerceIn(0f, 1f)
-}
-
-private const val TEMPANO = 0
-private const val ALBATROS = 1
-private const val BARCO = 2
-
-/** Cada medio minuto se tira la suerte. Témpanos más seguidos en el invierno austral; albatros de día; barcos de noche. */
-private fun nuevaVisita(t: Float): Visita? {
-    val m = Clima.mar
-    val mes = Calendar.getInstance().get(Calendar.MONTH) + 1
-    val invierno = if (mes in 6..11) 2f else 1f
-    val r = Random.nextFloat()
-    return when {
-        r < 0.025f * invierno -> Visita(TEMPANO, t, 360f + Random.nextFloat() * 240f, 0.15f + Random.nextFloat() * 0.5f, if (Random.nextBoolean()) 1f else -1f, 0.6f + Random.nextFloat() * 0.6f)
-        m.esDia && r < 0.025f * invierno + 0.05f -> Visita(ALBATROS, t, 22f + Random.nextFloat() * 10f, 0f, if (Random.nextBoolean()) 1f else -1f, 0.18f + Random.nextFloat() * 0.1f)
-        !m.esDia && r < 0.025f * invierno + 0.04f -> Visita(BARCO, t, 300f + Random.nextFloat() * 200f, 0.2f + Random.nextFloat() * 0.5f, if (Random.nextBoolean()) 1f else -1f, 1f)
-        else -> null
-    }
-}
-
-private fun DrawScope.dibujarVisita(v: Visita, t: Float, dia: Boolean) {
-    val w = size.width; val h = size.height
-    val hz = h * 0.36f
-    val a = v.avance(t)
-    // aparece y se va despacio
-    val alfa = (minOf(a, 1f - a) * 8f).coerceIn(0f, 1f)
-    when (v.tipo) {
-        TEMPANO -> {
-            val ancho = w * 0.07f * v.alto
-            val x = w * (v.x0 + v.sentido * a * 0.15f)
-            val alto = ancho * 0.22f
-            val cuerpo = Path().apply {
-                moveTo(x, hz); lineTo(x + ancho * 0.06f, hz - alto * 0.8f); lineTo(x + ancho * 0.25f, hz - alto)
-                lineTo(x + ancho * 0.48f, hz - alto); lineTo(x + ancho * 0.56f, hz - alto * 1.25f); lineTo(x + ancho * 0.82f, hz - alto * 1.15f)
-                lineTo(x + ancho * 0.92f, hz - alto * 0.5f); lineTo(x + ancho, hz); close()
-            }
-            val sombra = Path().apply {
-                moveTo(x + ancho * 0.56f, hz - alto * 1.25f); lineTo(x + ancho * 0.82f, hz - alto * 1.15f)
-                lineTo(x + ancho * 0.92f, hz - alto * 0.5f); lineTo(x + ancho, hz); lineTo(x + ancho * 0.7f, hz); close()
-            }
-            val claro = if (dia) Color(0xFFD5DEE2) else Color(0xFF8FA6B5)
-            drawPath(cuerpo, claro.copy(alpha = 0.92f * alfa))
-            drawPath(sombra, Color(0xFF7E9BB0).copy(alpha = 0.7f * alfa))
-            // su reflejo, roto por el agua
-            for (k in 0 until 4) {
-                val yy = hz + 2f + k * alto * 0.3f
-                drawRect(claro.copy(alpha = 0.18f * alfa * (1f - k / 4f)), Offset(x + ancho * 0.1f, yy), Size(ancho * 0.8f, alto * 0.12f))
-            }
-        }
-        ALBATROS -> {
-            val x = if (v.sentido > 0) -w * 0.1f + a * w * 1.2f else w * 1.1f - a * w * 1.2f
-            val y = h * v.alto + sin(a * 6.28f * 1.5f) * h * 0.015f
-            val env = w * 0.06f
-            // planea casi sin aletear: alas largas y finas, apenas arqueadas
-            val aleteo = sin(t * 2.2f) * 0.15f
-            val ala = Path().apply {
-                moveTo(x - env, y + env * (0.05f + aleteo * 0.3f))
-                quadraticBezierTo(x - env * 0.5f, y - env * (0.12f + aleteo), x, y)
-                quadraticBezierTo(x + env * 0.5f, y - env * (0.12f + aleteo), x + env, y + env * (0.05f + aleteo * 0.3f))
-            }
-            drawPath(ala, Color(0xFF0B2A40).copy(alpha = 0.85f * alfa), style = Stroke(width = env * 0.07f))
-            drawCircle(Color(0xFF0B2A40).copy(alpha = 0.85f * alfa), env * 0.05f, Offset(x, y + env * 0.01f))
-        }
-        BARCO -> {
-            val x = w * (v.x0 + v.sentido * a * 0.12f)
-            val luces = listOf(0f to -3f, 9f to -2f, 17f to -4f)
-            for ((dx, dy) in luces) {
-                val c = Offset(x + dx * density, hz + dy * density)
-                drawCircle(Brush.radialGradient(listOf(Color(0x66EDE3CF), Color.Transparent), c, 9f * density), 9f * density, c, alpha = alfa)
-                drawCircle(Color(0xFFEDE3CF).copy(alpha = alfa), 1.6f * density, c)
-                // la estela de luz sobre el agua
-                drawRect(Color(0x26EDE3CF).copy(alpha = 0.15f * alfa), Offset(c.x - 0.8f * density, hz + 3f * density), Size(1.6f * density, 34f * density))
-            }
-        }
-    }
+    /** Una foto muy chica del mar, para el vidrio (que de todas formas la desenfoca). */
+    fun cuadroChico(): ImageBitmap? = try {
+        lienzo?.takeIf { it.width > 0 && it.isAvailable }?.let { it.getBitmap(it.width / 6, it.height / 6) }?.asImageBitmap()
+    } catch (e: Exception) { null }
 }
 
 /** El grano del papel: una tesela de ruido que se repite y salta de lugar unas 12 veces por segundo. */
@@ -506,7 +392,7 @@ private fun teselaDeGrano(): ImageBitmap {
     val r = Random(7)
     for (i in px.indices) {
         val g = (r.nextFloat() + r.nextFloat() - 1f) // -1..1, más denso en el centro
-        val a = (kotlin.math.abs(g) * 30f).toInt().coerceIn(0, 255)
+        val a = (kotlin.math.abs(g) * 20f).toInt().coerceIn(0, 255)
         px[i] = if (g > 0) (a shl 24) or 0xEDE3CF else (a shl 24) or 0x02070F
     }
     return Bitmap.createBitmap(px, n, n, Bitmap.Config.ARGB_8888).asImageBitmap()

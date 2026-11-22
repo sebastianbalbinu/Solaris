@@ -121,12 +121,13 @@ fun Orilla() {
         val niebla = ((hondura - 0.5f) / 0.5f).coerceIn(0f, 1f)
         if (niebla > 0.01f) {
             Box(
-                Modifier.fillMaxWidth().statusBarsPadding().height(64.dp).graphicsLayer { alpha = niebla * retirada }
-                    .nieblaDeBorde(arriba = true)
+                Modifier.fillMaxWidth().graphicsLayer { alpha = niebla * retirada }.nieblaDeBorde(arriba = true)
+                    .statusBarsPadding().height(72.dp)
             )
             Box(
-                Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().height(150.dp)
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                     .graphicsLayer { alpha = niebla * retirada }.nieblaDeBorde(arriba = false)
+                    .navigationBarsPadding().height(150.dp)
             )
         }
 
@@ -327,7 +328,8 @@ private fun Tarjeta(r: Item, alTocar: () -> Unit) {
     Row(
         Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth()
             .presionable { alTocar() }
-            .vidrio(forma, Azules.Hondo, 0.42f, filo = 0.8f)
+            // sin desenfoque: allá abajo el agua ya está oscura, y desenfocar cada tarjeta al deslizar trababa todo
+            .clip(forma).background(Color(0xCC0B1620)).border(0.8.dp, filoDeLuz(0.7f), forma)
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

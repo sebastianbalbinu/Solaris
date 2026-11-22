@@ -100,16 +100,12 @@ fun Modifier.vidrio(
     return if (filo > 0f) base.border(0.8.dp, filoDeLuz(filo), forma) else base
 }
 
-/**
- * Niebla en un borde: el mar desenfocado que se va desvaneciendo, para que lo que se desliza
- * por debajo se disuelva en vez de cortarse.
- */
-fun Modifier.nieblaDeBorde(arriba: Boolean, tinte: Color = Azules.Abismo, opacidad: Float = 0.35f): Modifier =
-    this.hazeChild(Vidrio.estado, HazeStyle(backgroundColor = Azules.Abismo, tint = HazeTint(tinte.copy(alpha = opacidad)), blurRadius = 28.dp, noiseFactor = 0.05f)) {
-        mask = if (arriba) Brush.verticalGradient(0f to Color.Black, 0.55f to Color.Black.copy(alpha = 0.85f), 1f to Color.Transparent)
-        else Brush.verticalGradient(0f to Color.Transparent, 0.45f to Color.Black.copy(alpha = 0.85f), 1f to Color.Black)
-        fallbackTint = HazeTint(tinte.copy(alpha = 0.6f))
-    }
+/** Un borde que se oscurece hacia el agua honda: lo que se desliza se disuelve ahí (un degradado, nada más). */
+fun Modifier.nieblaDeBorde(arriba: Boolean, tinte: Color = Azules.Abismo): Modifier =
+    this.background(
+        if (arriba) Brush.verticalGradient(0f to tinte.copy(alpha = 0.92f), 0.6f to tinte.copy(alpha = 0.55f), 1f to Color.Transparent)
+        else Brush.verticalGradient(0f to Color.Transparent, 0.5f to tinte.copy(alpha = 0.6f), 1f to tinte.copy(alpha = 0.95f))
+    )
 
 /** Lo que se desliza se desvanece en los bordes de arriba y de abajo (sin cortarse en seco). */
 fun Modifier.bordesQueSeDisuelven(arriba: Dp = 40.dp, abajo: Dp = 110.dp): Modifier =
@@ -133,34 +129,4 @@ fun Modifier.enfoqueAlEntrar(transicion: Transition<EnterExitState>, maximo: Dp 
         if (it == EnterExitState.Visible) 0.dp else maximo
     }
     return if (radio > 0.5.dp) this.blur(radio) else this
-}
-
-/**
- * Bruma: dos o tres manchas de luz muy tenues que derivan despacio sobre el agua.
- * Es parte del mar (queda detrás del vidrio). Con [viva] en falso se queda quieta.
- */
-@Composable
-fun Bruma(modifier: Modifier = Modifier, viva: Boolean = true) {
-    var t by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(viva) {
-        while (isActive && viva) { delay(50); t += 0.05f }
-    }
-    Canvas(modifier.fillMaxSize()) {
-        val w = size.width; val h = size.height
-        val manchas = listOf(
-            Triple(0.25f + 0.10f * sin(t * 0.031f), 0.30f + 0.05f * cos(t * 0.023f), 0.075f),
-            Triple(0.80f + 0.08f * cos(t * 0.019f), 0.55f + 0.06f * sin(t * 0.027f), 0.06f),
-            Triple(0.45f + 0.12f * sin(t * 0.013f + 2f), 0.82f + 0.04f * cos(t * 0.017f), 0.05f),
-        )
-        manchas.forEach { (x, y, a) ->
-            val c = Offset(w * x, h * y)
-            drawCircle(
-                Brush.radialGradient(
-                    0f to Color(0xFFDCE6EA).copy(alpha = a), 0.6f to Color(0xFFDCE6EA).copy(alpha = a * 0.35f), 1f to Color.Transparent,
-                    center = c, radius = w * 0.75f,
-                ),
-                radius = w * 0.75f, center = c,
-            )
-        }
-    }
 }

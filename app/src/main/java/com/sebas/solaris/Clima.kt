@@ -102,13 +102,17 @@ object Clima {
     var mar by mutableStateOf(Mar.Inicial)
         private set
 
+    /** La última lectura es de hace poco: se puede confiar en ella para arrancar el mar. */
+    val fresca: Boolean get() = mar.real && System.currentTimeMillis() - mar.cuando < 90 * 60 * 1000
+
     fun iniciar(ctx: Context) {
+        if (::prefs.isInitialized) return
         prefs = ctx.getSharedPreferences("clima", Context.MODE_PRIVATE)
         prefs.getString("mar", null)?.let { try { mar = Mar.de(JSONObject(it)) } catch (e: Exception) {} }
     }
 
     suspend fun actualizar(forzar: Boolean = false) = withContext(Dispatchers.IO) {
-        if (!forzar && mar.real && System.currentTimeMillis() - mar.cuando < 50 * 60 * 1000) return@withContext
+        if (!forzar && mar.real && System.currentTimeMillis() - mar.cuando < 25 * 60 * 1000) return@withContext
         try {
             val tiempo = JSONObject(get(
                 "https://api.open-meteo.com/v1/forecast?latitude=$LAT&longitude=$LON" +
@@ -164,7 +168,7 @@ object Clima {
                 puesta = puesta,
                 kp = kp,
             )
-            mar = nuevo
+            withContext(Dispatchers.Main) { mar = nuevo }
             prefs.edit().putString("mar", nuevo.json().toString()).apply()
         } catch (e: Exception) {
             // sin conexión: el océano sigue con la última lectura

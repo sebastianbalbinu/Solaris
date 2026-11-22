@@ -267,7 +267,6 @@ fun Editor(b: Borrador) {
                                     BasicTextField(
                                         value = bl.valor,
                                         onValueChange = { nuevo ->
-                                            if (nuevo.text != bl.valor.text) Ritmo.tecla(kotlin.math.abs(nuevo.text.length - bl.valor.text.length))
                                             // en un poema el enter no arma listas
                                             cambiar(bl, if (forma.poema) nuevo else continuarLista(bl.valor, nuevo))
                                         },

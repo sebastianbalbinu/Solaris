@@ -12,6 +12,9 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
 import androidx.compose.ui.graphics.graphicsLayer
 import dev.chrisbanes.haze.haze
+import kotlin.math.roundToInt
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.Image
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -101,12 +104,25 @@ fun Solaris(act: MainActivity) {
             val enSuperficie = Nav.listaOrilla.firstVisibleItemIndex == 0
             val marVivo = !Casa.abierta || Nav.borrador != null || (!encima && enSuperficie)
             DisposableEffect(Unit) { Vidrio.activo = true; onDispose { Vidrio.activo = false } }
-            // el mar es lo único que se ve a través del vidrio: con su bruma y la oscuridad de lo hondo
-            Box(Modifier.fillMaxSize().haze(Vidrio.estado)) {
-                MarCianotipo(Modifier.fillMaxSize(), vivo = marVivo)
-                Bruma(viva = marVivo)
-                Box(Modifier.fillMaxSize().graphicsLayer { alpha = Vidrio.hondura * Vidrio.presencia * 0.84f }.background(Azules.Abismo))
+            // El vidrio no mira el video en vivo (eso costaba un desenfoque por cuadro): mira una foto chiquita
+            // del mar que se renueva cada segundo y medio. Va detrás del mar, así que no se ve sola.
+            var fotoMar by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+            LaunchedEffect(marVivo) {
+                while (isActive) {
+                    MarVivo.cuadroChico()?.let { fotoMar = it }
+                    delay(if (marVivo) 1500L else 6000L)
+                }
             }
+            // lo hondo, en escalones: el vidrio no se vuelve a desenfocar a cada cuadro del scroll
+            val honduraVidrio by remember { derivedStateOf { (Vidrio.hondura * Vidrio.presencia * 10f).roundToInt() / 10f } }
+            Box(Modifier.fillMaxSize().haze(Vidrio.estado)) {
+                val f = fotoMar
+                if (f != null) Image(f, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                else Box(Modifier.fillMaxSize().background(Azules.Hondo))
+                if (honduraVidrio > 0f) Box(Modifier.fillMaxSize().background(Azules.Abismo.copy(alpha = honduraVidrio * 0.84f)))
+            }
+            MarCianotipo(Modifier.fillMaxSize(), vivo = marVivo)
+            Box(Modifier.fillMaxSize().graphicsLayer { alpha = Vidrio.hondura * Vidrio.presencia * 0.84f }.background(Azules.Abismo))
             // los velos de la llegada no desaparecen de golpe al abrir: se retiran despacio, como la marea
             val velo by animateFloatAsState(
                 if (Casa.abierta) 0f else 1f,

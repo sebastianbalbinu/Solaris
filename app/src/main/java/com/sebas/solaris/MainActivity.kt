@@ -24,6 +24,7 @@ class MainActivity : FragmentActivity() {
         Casa.iniciar(this)
         Tema.iniciar(this)
         Clima.iniciar(this)
+        Vigia.programar(this)
         Sonidos.iniciar(this)
         Boyas.iniciar(this)
         Paquete.iniciar(this)
