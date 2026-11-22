@@ -387,7 +387,7 @@ fun Editor(b: Borrador) {
                                 .then(if (bl.esMedio) Modifier.pointerInput(bl.clave) {
                                     // mantener presionada una foto o un casete y arrastrarlo a otro lugar de la hoja
                                     detectDragGesturesAfterLongPress(
-                                        onDragStart = { arrastrando = bl.clave; desfaseArrastre = 0f; Sonidos.tecla() },
+                                        onDragStart = { arrastrando = bl.clave; desfaseArrastre = 0f; com.sebas.solaris.Sonidos.tecla() },
                                         onDragEnd = { arrastrando = null; desfaseArrastre = 0f; bloques.reemplazar(ordenar(bloques.toList())); sincronizar() },
                                         onDragCancel = { arrastrando = null; desfaseArrastre = 0f },
                                     ) { cambio, d ->
@@ -397,10 +397,10 @@ fun Editor(b: Borrador) {
                                         if (k < 0) return@detectDragGesturesAfterLongPress
                                         if (desfaseArrastre > 0 && k < bloques.size - 1) {
                                             val h = (altos[bloques[k + 1].clave] ?: 0).toFloat()
-                                            if (desfaseArrastre > h / 2) { bloques.add(k + 1, bloques.removeAt(k)); desfaseArrastre -= h; Sonidos.tic() }
+                                            if (desfaseArrastre > h / 2) { bloques.add(k + 1, bloques.removeAt(k)); desfaseArrastre -= h; com.sebas.solaris.Sonidos.tic() }
                                         } else if (desfaseArrastre < 0 && k > 0) {
                                             val h = (altos[bloques[k - 1].clave] ?: 0).toFloat()
-                                            if (-desfaseArrastre > h / 2) { bloques.add(k - 1, bloques.removeAt(k)); desfaseArrastre += h; Sonidos.tic() }
+                                            if (-desfaseArrastre > h / 2) { bloques.add(k - 1, bloques.removeAt(k)); desfaseArrastre += h; com.sebas.solaris.Sonidos.tic() }
                                         }
                                     }
                                 } else Modifier),
@@ -497,7 +497,7 @@ fun Editor(b: Borrador) {
                     ColoresTinta.forEachIndexed { i, c ->
                         Box(
                             Modifier.size(28.dp).clip(CircleShape).background(c)
-                                .border(if (i == colorTrazo) 2.dp else 0.dp, p.texto, CircleShape).clickable { Sonidos.tic(); colorTrazo = i },
+                                .border(if (i == colorTrazo) 2.dp else 0.dp, p.texto, CircleShape).clickable { com.sebas.solaris.Sonidos.tic(); colorTrazo = i },
                         )
                     }
                     Enlace("Deshacer") { if (trazos.isNotEmpty()) trazos.removeAt(trazos.size - 1) }

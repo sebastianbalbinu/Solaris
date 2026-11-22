@@ -285,7 +285,7 @@ private fun Deck(alRec: () -> Unit, alStop: () -> Unit) {
         }
     }
     val numero = Casa.cintas().size + 1
-    PanelDeck(Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp)).navigationBarsPadding()) {
+    PanelDeck(Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("SOLARIS", color = TintaDeck, fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 13.sp, letterSpacing = 4.sp)
@@ -340,6 +340,7 @@ private fun Deck(alRec: () -> Unit, alStop: () -> Unit) {
             }
         }
         Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.navigationBarsPadding())
     }
 }
 
