@@ -1,0 +1,92 @@
+name: Hornear el mar (v3)
+
+# Genera los videos del mar nuevo (física real de oleaje) en 20 máquinas a la vez y los sube al release mar-v3.
+# Si algo se corta, volver a lanzarlo solo hace lo que falta.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  preparar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Crear el release del mar
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view mar-v3 >/dev/null 2>&1 || gh release create mar-v3 --title "El mar del Drake (v3)" \
+            --notes "Videos del mar de Solaris: oleaje con física real, 720×1600 a 60 fps (HEVC). Los baja la app según el estado del Drake." --prerelease
+
+  hornear:
+    needs: preparar
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        parte: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Herramientas
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg libegl1 libegl-mesa0 libgl1-mesa-dri libgbm1 >/dev/null
+          pip install -q moderngl numpy pillow
+      - name: Hornear y subir
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          export YA="$(gh release view mar-v3 --json assets -q '.assets[].name' | tr '\n' ' ')"
+          mkdir -p mar
+          # se sube cada video apenas termina, así un corte no pierde lo hecho
+          python3 herramientas/oceano.py hornear mar ${{ matrix.parte }} 20 2>&1 | while read -r linea; do
+            echo "$linea"
+            nombre="$(echo "$linea" | awk '{print $1}')"
+            if [ -f "mar/$nombre.mp4" ] && [ -f "mar/$nombre.mov.json" ]; then
+              gh release upload mar-v3 "mar/$nombre.mp4" "mar/$nombre.mov.json" --clobber
+            fi
+          done
+          test "${PIPESTATUS[0]}" = "0"
+
+  indice:
+    needs: hornear
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Armar el índice
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view mar-v3 --json assets > activos.json
+          python3 - <<'PY'
+          import json, sys
+          sys.path.insert(0, 'herramientas')
+          # el índice solo necesita la lista de videos (sin renderizar nada)
+          import importlib.util
+          spec = importlib.util.spec_from_file_location('o', 'herramientas/oceano.py')
+          src = open('herramientas/oceano.py').read().replace('import moderngl', 'moderngl = None')
+          o = {}
+          exec(compile(src.split("if __name__ == '__main__':")[0], 'oceano', 'exec'), o)
+          activos = {a['name']: a['size'] for a in json.load(open('activos.json'))['assets']}
+          est, tr, mov, peso = {}, {}, {}, {}
+          for v in o['todos_los_videos']():
+              n = o['archivo'](v)
+              if n + '.mp4' not in activos or n + '.mov.json' not in activos:
+                  continue
+              peso[n + '.mp4'] = activos[n + '.mp4']
+              mov[n] = n + '.mov.json'
+              if v[0] == 'bucle':
+                  est[o['nombre_estado'](*v[1])] = n + '.mp4'
+              else:
+                  tr[o['nombre_estado'](*v[1]) + '>' + o['nombre_estado'](*v[2])] = n + '.mp4'
+          i = dict(version=3, fps=o['FPS'], segundos=o['PERIODO'], transicion=o['TRANSICION'], entrada_ms=0,
+                   horizonte=o['HORIZONTE'], escalera=o['ESCALERA'], luces=list(o['LUCES']),
+                   estados=est, transiciones=tr, movimiento=mov, bytes=peso)
+          json.dump(i, open('indice.json', 'w'), indent=1)
+          print(len(est), 'estados,', len(tr), 'pasos,', sum(peso.values()) // 2**20, 'MB')
+          PY
+          gh release upload mar-v3 indice.json --clobber

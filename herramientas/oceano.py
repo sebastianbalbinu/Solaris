@@ -12,7 +12,7 @@ El mar nuevo de Solaris: oleaje con física real (método de Tessendorf, el de l
 
 Uso:  python3 oceano.py prueba SALIDA_DIR          -> PNG de prueba
 """
-import sys, os, math, json, time
+import sys, os, math, json, time, subprocess
 import numpy as np
 import moderngl
 from PIL import Image
@@ -66,12 +66,41 @@ class Cascada:
         return Sk * self.dk
 
 
+def campos_de(h0s, chop, cascadas, t, periodo=None):
+    """Desplazamiento (Dx, h, Dz), pendientes y jacobiano de cada cascada en el instante t."""
+    out = []
+    for c, (h0, h0m) in zip(cascadas, h0s):
+        w = c.w if periodo is None else c.wq
+        e = np.exp(1j * w * t)
+        ht = h0 * e + h0m * np.conj(e)
+        k = c.k
+        N2 = c.N * c.N
+        ifft = lambda a: np.real(np.fft.ifft2(a)) * N2
+        h = ifft(ht)
+        dx = ifft(-1j * c.kx / k * ht) * chop
+        dz = ifft(-1j * c.kz / k * ht) * chop
+        sx = ifft(1j * c.kx * ht)
+        sz = ifft(1j * c.kz * ht)
+        dxx = ifft(c.kx * c.kx / k * ht) * chop
+        dzz = ifft(c.kz * c.kz / k * ht) * chop
+        dxz = ifft(c.kx * c.kz / k * ht) * chop
+        J = (1 + dxx) * (1 + dzz) - dxz * dxz
+        out.append(dict(h=h, dx=dx, dz=dz, sx=sx / (1 + dxx).clip(0.2), sz=sz / (1 + dzz).clip(0.2), J=J))
+    return out
+
+
 class Mar:
     """Un estado de mar: viento, mar de fondo, y las dos cascadas."""
-    def __init__(self, p, semilla=7):
+    def __init__(self, p, semilla=7, periodo=None):
         self.p = p
+        self.periodo = periodo
         self.c1 = Cascada(512, 640.0, 2 * np.pi / 640.0, 2 * np.pi / 28.0, semilla)
         self.c2 = Cascada(256, 60.0, 2 * np.pi / 28.0, 2 * np.pi / 0.25, semilla + 1)
+        if periodo:
+            # cada ola gira un número entero de vueltas en el período: el bucle cierra perfecto, sin fundidos
+            w0 = 2 * np.pi / periodo
+            for c in (self.c1, self.c2):
+                c.wq = np.maximum(np.round(c.w / w0), 1) * w0
         comps = []
         # mar de viento: su período pico sale del viento si no se da (mar desarrollado)
         # el período del mar de viento sale de su altura (relación de un mar joven, Pierson-Moskowitz)
@@ -103,25 +132,7 @@ class Mar:
         self.chop = p.get('chop', 1.0)
 
     def campos(self, t, dt_espuma=None):
-        """Desplazamiento (Dx, h, Dz), pendientes y espuma de cada cascada en el instante t."""
-        out = []
-        for c, (h0, h0m) in zip((self.c1, self.c2), self.h0):
-            e = np.exp(1j * c.w * t)
-            ht = h0 * e + h0m * np.conj(e)
-            k = c.k
-            N2 = c.N * c.N
-            ifft = lambda a: np.real(np.fft.ifft2(a)) * N2
-            h = ifft(ht)
-            dx = ifft(-1j * c.kx / k * ht) * self.chop
-            dz = ifft(-1j * c.kz / k * ht) * self.chop
-            sx = ifft(1j * c.kx * ht)
-            sz = ifft(1j * c.kz * ht)
-            dxx = ifft(c.kx * c.kx / k * ht) * self.chop
-            dzz = ifft(c.kz * c.kz / k * ht) * self.chop
-            dxz = ifft(c.kx * c.kz / k * ht) * self.chop
-            J = (1 + dxx) * (1 + dzz) - dxz * dxz
-            out.append(dict(h=h, dx=dx, dz=dz, sx=sx / (1 + dxx).clip(0.2), sz=sz / (1 + dzz).clip(0.2), J=J))
-        return out
+        return campos_de(self.h0, self.chop, (self.c1, self.c2), t, self.periodo)
 
     def actualizar_espuma(self, campos, dt):
         """La espuma nace donde el agua se pliega y se deshace poco a poco."""
@@ -189,6 +200,9 @@ float hash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32);
 float ruido(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
     return mix(mix(hash(i), hash(i+vec2(1,0)), f.x), mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), f.x), f.y); }
 float fbm(vec2 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 6; i++){ s += a * ruido(p); p = mat2(1.6,1.2,-1.2,1.6) * p; a *= 0.5; } return s; }
+uniform float T;          // período del bucle: todo lo que se mueve vuelve a empezar igual
+// ruido que deriva con velocidad v y aun así cierra el bucle (dos derivas cruzadas)
+float fbmT(vec2 p, vec2 v){ float tau = mod(t, T); return mix(fbm(p + v * tau), fbm(p + v * (tau - T)), tau / T); }
 
 // el cielo del Drake: nubes bajas en capas, más claras donde está el sol
 vec3 cielo(vec3 d, bool detalle){
@@ -196,10 +210,14 @@ vec3 cielo(vec3 d, bool detalle){
     vec3 base = mix(cieloHorizonte, cieloZenit, pow(y, 0.55));
     float haciaSol = max(dot(d, solDir), 0.0);
     base += colorSol * (pow(haciaSol, 6.0) * 0.25 + pow(haciaSol, 40.0) * 0.35) * (1.0 - nubes * 0.55);
+    // con el sol en el horizonte (alba y ocaso), una franja encendida que se abre hacia su lado
+    float bajo = smoothstep(0.12, 0.0, solDir.y);
+    float lado = pow(max(dot(normalize(d.xz + 1e-4), normalize(solDir.xz)), 0.0), 2.0);
+    base += colorSol * exp(-y * 14.0) * (0.35 + 0.65 * lado) * 0.55 * bajo;
     if (nubes > 0.01 && d.y > 0.0) {
         vec2 pc = d.xz / (d.y + 0.04) * 1.6;
-        float n1 = detalle ? fbm(pc * 0.9 + vec2(t * 0.004, t * 0.002)) : ruido(pc * 0.9);
-        float n2 = detalle ? fbm(pc * 2.7 + vec2(-t * 0.006, t * 0.003) + 7.0) : 0.5;
+        float n1 = detalle ? fbmT(pc * 0.9, vec2(0.004, 0.002)) : ruido(pc * 0.9);
+        float n2 = detalle ? fbmT(pc * 2.7 + 7.0, vec2(-0.006, 0.003)) : 0.5;
         float cuerpo = smoothstep(0.62 - nubes * 0.55, 0.95 - nubes * 0.25, n1 * 0.75 + n2 * 0.35);
         // panzas oscuras, bordes iluminados del lado del sol
         vec3 gris = mix(cieloHorizonte * 0.62, cieloHorizonte * 0.95, smoothstep(0.3, 0.9, n2));
@@ -228,9 +246,10 @@ void main(){
     // el rizado capilar que el viento levanta encima de todo (más fino de lo que alcanza la cascada)
     float cerca0 = 1.0 - smoothstep(20.0, 160.0, dist);
     if (cerca0 > 0.0) {
-        vec2 pq = xz * 2.3 + vec2(t * 0.9, t * 0.6);
+        vec2 pq = xz * 2.3;
+        vec2 vq = vec2(0.25, 0.17);
         float e0 = 0.08;
-        float r0 = fbm(pq), rx = fbm(pq + vec2(e0, 0.0)), rz = fbm(pq + vec2(0.0, e0));
+        float r0 = fbmT(pq, vq), rx = fbmT(pq + vec2(e0, 0.0), vq), rz = fbmT(pq + vec2(0.0, e0), vq);
         pend += vec2(rx - r0, rz - r0) / e0 * 0.05 * rizo * cerca0;
     }
     vec3 N = normalize(vec3(-pend.x, 1.0, -pend.y));
@@ -260,23 +279,23 @@ void main(){
     float f2 = texture(d2, xz / L2).w * (1.0 - smoothstep(40.0, 220.0, dist));
     float cerca = 1.0 - smoothstep(150.0, 2500.0, dist);
     // encaje: dos escalas de ruido, para que la espuma sea hilos y agujeros, no manchas
-    float e1 = fbm(xz * 0.45 + vec2(t * 0.05, -t * 0.03));
-    float e2 = fbm(xz * 1.7 + vec2(-t * 0.08, t * 0.06) + 9.0);
+    float e1 = fbmT(xz * 0.45, vec2(0.02, -0.012));
+    float e2 = fbmT(xz * 1.7 + 9.0, vec2(-0.03, 0.02));
     float encaje = e1 * 0.6 + e2 * 0.55;
     float rompe = smoothstep(0.5, 0.95, f1) * mix(0.8, smoothstep(0.42, 0.7, encaje), cerca);
     float queda = smoothstep(0.03, 0.5, f1) * mix(0.3, smoothstep(0.66, 0.8, encaje), cerca) * 0.65;
     // de lejos la textura se promedia: ese promedio es cuánta espuma cubre el mar ahí, y se pinta así
     float lejos = clamp(f1 * 1.5, 0.0, 1.0) * 0.85;
     // hilos: ruido "de cresta" (1 - |2n-1|) que deja filamentos en vez de manchas
-    float hilo1 = 1.0 - abs(fbm(xz * 0.9 + vec2(t * 0.06, 2.0)) * 2.0 - 1.0);
-    float hilo2 = 1.0 - abs(fbm(xz * 2.6 + vec2(-t * 0.1, 7.0)) * 2.0 - 1.0);
+    float hilo1 = 1.0 - abs(fbmT(xz * 0.9 + vec2(0.0, 2.0), vec2(0.02, 0.0)) * 2.0 - 1.0);
+    float hilo2 = 1.0 - abs(fbmT(xz * 2.6 + vec2(0.0, 7.0), vec2(-0.03, 0.0)) * 2.0 - 1.0);
     float filamento = smoothstep(0.72, 0.92, hilo1 * 0.6 + hilo2 * 0.5);
-    float menuda = smoothstep(0.3, 0.8, f2) * filamento * 0.75;
+    float menuda = smoothstep(0.4, 0.9, f2) * filamento * 0.45;
     rompe *= mix(1.0, 0.55 + 0.45 * filamento + 0.3 * smoothstep(0.5, 0.75, encaje), cerca);
     // vetas largas que el viento estira sobre el mar (desde temporal)
     vec2 wv = normalize(vientoDir);
     vec2 qv = vec2(dot(xz, vec2(-wv.y, wv.x)), dot(xz, wv));
-    float veta = 1.0 - abs(fbm(qv * vec2(0.45, 0.018) + vec2(0.0, -t * 0.02)) * 2.0 - 1.0);
+    float veta = 1.0 - abs(fbmT(qv * vec2(0.45, 0.018), vec2(0.0, -0.01)) * 2.0 - 1.0);
     float vetas = smoothstep(0.9, 0.985, veta) * vetasViento * 0.65 * smoothstep(15.0, 80.0, dist);
     float f = mix(lejos, clamp(max(max(rompe, queda), menuda), 0.0, 1.0), smoothstep(400.0, 60.0, dist));
     f = max(f, vetas * (0.6 + 0.4 * filamento));
@@ -326,7 +345,8 @@ class Camara:
     def __init__(self, W, H, ss=2, altura=9.0, inclinacion=-9.0, fovy=78.0):
         self.W, self.H, self.ss = W, H, ss
         self.ctx = moderngl.create_standalone_context(backend='egl')
-        self.fbo = self.ctx.simple_framebuffer((W * ss, H * ss), components=4)
+        tam = (W * ss, H * ss)
+        self.fbo = self.ctx.simple_framebuffer(tam, components=4)
         self.prog = self.ctx.program(vertex_shader=VS, fragment_shader=FS)
         self.cprog = self.ctx.program(vertex_shader=VS_CIELO, fragment_shader=FS_CIELO)
         # malla polar
@@ -356,36 +376,35 @@ class Camara:
         t.build_mipmaps()
         return t
 
-    def cuadro(self, mar, campos, t, cielo, balanceo=(0.0, 0.0)):
+    def cuadro(self, mar, campos, t, cielo, altura=None, periodo=30.0):
+        """Un cuadro. [mar] da las cascadas (con su espuma) y p (hs, viento, dir_viento)."""
         W, H, ss = self.W * self.ss, self.H * self.ss, self.ss
-        # el barco sube y baja con el agua que tiene debajo (si no, en un temporal la cámara quedaría bajo una cresta)
-        h0 = float(campos[0]['h'][0, 0] + campos[1]['h'][0, 0])
-        ojo = np.array([0.0, self.altura + 0.85 * h0, 0.0], np.float32)
-        pitch = math.radians(self.incl + balanceo[0])
-        roll = math.radians(balanceo[1])
+        if altura is None:
+            # pruebas: el barco sube y baja con el agua que tiene debajo
+            h0 = float(campos[0]['h'][0, 0] + campos[1]['h'][0, 0])
+            altura = self.altura + 0.85 * h0
+        ojo = np.array([0.0, altura, 0.0], np.float32)
+        pitch = math.radians(self.incl)
         dirv = np.array([0, math.sin(pitch), math.cos(pitch)], np.float32)
-        arriba = (math.sin(roll), math.cos(roll), 0)
-        V = mirar(ojo, ojo + dirv, arriba)
+        V = mirar(ojo, ojo + dirv)
         P = perspectiva(math.radians(self.fovy), W / H, 0.5, 40000.0)
         vp = P @ V
         for k, (c, f) in enumerate(zip((mar.c1, mar.c2), campos), 1):
             self.subir(f'd{k}', np.stack([f['dx'], f['h'], f['dz'], c.espuma], -1))
             self.subir(f'n{k}', np.stack([f['sx'], f['sz'], np.zeros_like(f['h']), np.zeros_like(f['h'])], -1))
-        comunes = dict(t=t, **cielo)
+        comunes = dict(t=t, T=periodo, **cielo)
         self.fbo.use(); self.ctx.clear(0, 0, 0, 1)
-        self.ctx.enable(moderngl.DEPTH_TEST)
-        # cielo
         for k, v in dict(comunes, ivp=tuple(np.linalg.inv(vp).T.reshape(-1)), cam=tuple(ojo)).items():
             if k in self.cprog: self.cprog[k].value = v
         self.ctx.disable(moderngl.DEPTH_TEST)
         self.cvao.render(moderngl.TRIANGLE_STRIP)
         self.ctx.enable(moderngl.DEPTH_TEST)
-        # mar
         pr = self.prog
+        p = mar.p
         u = dict(comunes, cam=tuple(ojo), vp=tuple(vp.T.reshape(-1)), rmin=1.5, rmax=26000.0,
-                 amin=-math.radians(48), amax=math.radians(48), L1=mar.c1.L, L2=mar.c2.L, hs=mar.p['hs'],
-                 vientoDir=(math.cos(math.radians(mar.p['dir_viento'])), math.sin(math.radians(mar.p['dir_viento']))),
-                 vetasViento=float(np.clip((mar.p['viento'] - 28) / 22.0, 0, 1)), rizo=float(np.clip(mar.p['viento'] / 25.0, 0.15, 1.2)))
+                 amin=-math.radians(48), amax=math.radians(48), L1=mar.c1.L, L2=mar.c2.L, hs=p['hs'],
+                 vientoDir=(math.cos(math.radians(p['dir_viento'])), math.sin(math.radians(p['dir_viento']))),
+                 vetasViento=float(np.clip((p['viento'] - 28) / 22.0, 0, 1)), rizo=float(np.clip(p['viento'] / 25.0, 0.15, 1.2)))
         for k, v in u.items():
             if k in pr: pr[k].value = v
         for i, n in enumerate(['d1', 'd2', 'n1', 'n2']):
@@ -444,6 +463,225 @@ def prueba(salida, W=720, H=1600):
         print(nombre, round(time.time() - t0, 1), 's', flush=True)
 
 
+# ---------------------------------------------------------------- los videos (mar v3)
+
+PERIODO = 30.0          # un bucle: 30 s que cierran perfecto
+TRANSICION = 60.0       # un paso entre estados vecinos: 60 s
+FPS = 60
+W_VIDEO, H_VIDEO = 720, 1600
+ESCALERA = [1, 1.5, 2, 3, 4, 5, 6, 8, 10]
+VIENTOS = {1: 8, 1.5: 11, 2: 14, 3: 18, 4: 24, 5: 28, 6: 32, 8: 40, 10: 50}
+HORIZONTE = 0.402        # dónde queda el horizonte en el cuadro (cámara 9° hacia abajo, 78° de campo)
+
+LUCES = {
+    'dia': CIELOS['cubierto'],
+    'crep': dict(solDir=(0.80, 0.035, 0.60), nubes=0.72, luz=0.62, vis=20.0,
+                 cieloZenit=(0.19, 0.24, 0.33), cieloHorizonte=(0.64, 0.53, 0.47), colorSol=(1.0, 0.70, 0.45)),
+    'noche': dict(solDir=(-0.35, 0.30, 0.88), nubes=0.9, luz=0.0, vis=14.0,
+                  cieloZenit=(0.42, 0.50, 0.64), cieloHorizonte=(0.62, 0.70, 0.82), colorSol=(0.55, 0.62, 0.75)),
+}
+VECINOS_LUZ = [('dia', 'crep'), ('crep', 'noche')]
+
+
+def params_hs(h):
+    """El mar del Drake para una altura significativa: mar de fondo del oeste y mar de viento encima."""
+    fondo = min(0.75 * h, 2.0 + 0.3 * h)
+    viento_hs = math.sqrt(max(h * h - fondo * fondo, 0.04))
+    return dict(hs=h, viento=VIENTOS[h], hs_viento=viento_hs, hs_fondo=fondo, tp_fondo=11.0 + 0.3 * h,
+                dir_viento=252, dir_fondo=238, chop=0.8 + 0.045 * h, espuma_vida=2.5 + 0.35 * h)
+
+
+def nombre_estado(luz, h):
+    return f'{luz}_{h:g}m'
+
+
+def todos_los_videos():
+    """Bucles, pasos de ola (en cada luz) y pasos de luz (en cada altura)."""
+    v = []
+    for luz in LUCES:
+        for h in ESCALERA:
+            v.append(('bucle', (luz, h), None))
+    for luz in LUCES:
+        for a, b in zip(ESCALERA, ESCALERA[1:]):
+            v.append(('paso', (luz, a), (luz, b)))
+            v.append(('paso', (luz, b), (luz, a)))
+    for h in ESCALERA:
+        for la, lb in VECINOS_LUZ:
+            v.append(('paso', (la, h), (lb, h)))
+            v.append(('paso', (lb, h), (la, h)))
+    return v
+
+
+def archivo(v):
+    tipo, a, b = v
+    return nombre_estado(*a) + ('' if tipo == 'bucle' else '__' + nombre_estado(*b))
+
+
+def lerp(a, b, s):
+    if isinstance(a, (tuple, list)):
+        return tuple(x + (y - x) * s for x, y in zip(a, b))
+    return a + (b - a) * s
+
+
+class Paso:
+    """Un mar que puede estar entre dos estados: las mismas olas (mismas fases), otra energía."""
+    def __init__(self, a, b=None):
+        self.A = Mar(params_hs(a[1]), periodo=PERIODO)
+        self.B = Mar(params_hs(b[1]), periodo=PERIODO) if b else None
+        self.la, self.lb = LUCES[a[0]], LUCES[b[0]] if b else None
+        self.c1, self.c2 = self.A.c1, self.A.c2
+        self.s = 0.0
+
+    def fijar(self, s):
+        self.s = s
+        A, B = self.A, self.B
+        if B is None:
+            self.h0, self.chop, self.cobertura, self.p = A.h0, A.chop, A.cobertura, A.p
+            self.cielo = self.la
+            return
+        self.h0 = [(ha * (1 - s) + hb * s, hma * (1 - s) + hmb * s) for (ha, hma), (hb, hmb) in zip(A.h0, B.h0)]
+        self.chop = lerp(A.chop, B.chop, s)
+        self.cobertura = lerp(A.cobertura, B.cobertura, s)
+        self.p = {k: lerp(A.p[k], B.p[k], s) for k in ('hs', 'viento', 'dir_viento', 'espuma_vida')}
+        self.cielo = {k: lerp(self.la[k], self.lb[k], s) for k in self.la}
+
+    def campos(self, t):
+        return campos_de(self.h0, self.chop, (self.c1, self.c2), t, PERIODO)
+
+    def espuma(self, campos, dt):
+        Mar.actualizar_espuma(self, campos, dt)
+
+    @property
+    def altura(self):
+        return 9.0 + 0.5 * self.p['hs']
+
+
+def muestrear(h, L, x, z):
+    """La altura del agua en (x, z) metros, con interpolación bilineal sobre la cascada."""
+    N = h.shape[0]
+    u, v = (x / L * N) % N, (z / L * N) % N
+    i0, j0 = int(v), int(u)
+    fu, fv = u - j0, v - i0
+    i1, j1 = (i0 + 1) % N, (j0 + 1) % N
+    return (h[i0, j0] * (1 - fu) * (1 - fv) + h[i0, j1] * fu * (1 - fv) + h[i1, j0] * (1 - fu) * fv + h[i1, j1] * fu * fv)
+
+
+def movimiento(campos, L):
+    """Cómo se mueve un barco de unos 70 m sobre este mar: cabeceo, balanceo y subida (grados, grados, metros)."""
+    h = campos[0]['h']
+    m = lambda x, z: muestrear(h, L, x, z)
+    proa, popa = m(0, 30) + m(3, 30) + m(-3, 30), m(0, -30) + m(3, -30) + m(-3, -30)
+    babor, estribor = m(-7, 0) + m(-7, 10) + m(-7, -10), m(7, 0) + m(7, 10) + m(7, -10)
+    sube = (m(0, 0) + m(0, 15) + m(0, -15) + m(5, 0) + m(-5, 0)) / 5
+    cabeceo = math.degrees(math.atan((proa - popa) / 3 / 60.0))
+    balanceo = math.degrees(math.atan((estribor - babor) / 3 / 14.0)) * 0.55
+    return [round(cabeceo, 3), round(balanceo, 3), round(sube, 3)]
+
+
+def suavizar(curva, ventana, ciclico):
+    """La inercia del barco: no sigue cada ondita, sino el promedio del agua bajo su casco."""
+    a = np.array(curva, np.float64)
+    n = len(a)
+    k = np.ones(ventana) / ventana
+    if ciclico:
+        ext = np.concatenate([a[-ventana:], a, a[:ventana]])
+    else:
+        ext = np.concatenate([np.repeat(a[:1], ventana, 0), a, np.repeat(a[-1:], ventana, 0)])
+    out = np.stack([np.convolve(ext[:, j], k, mode='same') for j in range(a.shape[1])], -1)
+    return np.round(out[ventana:ventana + n], 3).tolist()
+
+
+def codificador(ruta):
+    return subprocess.Popen(['ffmpeg', '-y', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgb24',
+        '-s', f'{W_VIDEO}x{H_VIDEO}', '-r', str(FPS), '-i', '-',
+        '-c:v', 'libx265', '-preset', 'medium', '-crf', '25', '-pix_fmt', 'yuv420p', '-tag:v', 'hvc1',
+        '-x265-params', 'keyint=60:min-keyint=60:scenecut=0:log-level=error',
+        '-movflags', '+faststart', '-an', ruta], stdin=subprocess.PIPE)
+
+
+def hornear(v, salida, cam=None, segundos=None):
+    """Renderiza un video (bucle o paso) y su curva de movimiento."""
+    tipo, a, b = v
+    nombre = archivo(v)
+    ruta = os.path.join(salida, nombre + '.mp4')
+    if os.path.exists(ruta) and os.path.exists(os.path.join(salida, nombre + '.mov.json')):
+        return
+    cam = cam or Camara(W_VIDEO, H_VIDEO, ss=1)
+    paso = Paso(a, b if tipo == 'paso' else None)
+    dur = segundos or (PERIODO if tipo == 'bucle' else TRANSICION)
+    n = int(dur * FPS)
+    paso.fijar(0.0)
+    # la espuma se forma antes de empezar, igual que en el bucle de origen (así el empalme es exacto)
+    for k in range(int(PERIODO * FPS)):
+        tt = -PERIODO + k / FPS
+        paso.espuma(paso.campos(tt), 1.0 / FPS)
+    ff = codificador(ruta + '.tmp.mp4')
+    mov = []
+    t0 = time.time()
+    for k in range(n):
+        t = k / FPS
+        if tipo == 'paso':
+            x = t / dur
+            paso.fijar(x * x * x * (x * (x * 6 - 15) + 10))
+        campos = paso.campos(t)
+        paso.espuma(campos, 1.0 / FPS)
+        img = cam.cuadro(paso, campos, t, paso.cielo, altura=paso.altura, periodo=PERIODO)
+        if cam.ss != 1:
+            img = np.asarray(Image.fromarray(img).resize((W_VIDEO, H_VIDEO), Image.BILINEAR))
+        ff.stdin.write(np.ascontiguousarray(img).tobytes())
+        if k % 2 == 0:
+            mov.append(movimiento(campos, paso.c1.L))
+    ff.stdin.close(); ff.wait()
+    os.rename(ruta + '.tmp.mp4', ruta)
+    mov = suavizar(mov, 30, ciclico=(tipo == 'bucle'))
+    with open(os.path.join(salida, nombre + '.mov.json'), 'w') as f:
+        json.dump(dict(hz=30, mov=mov), f, separators=(',', ':'))
+    print(nombre, n, 'cuadros', round(time.time() - t0), 's', os.path.getsize(ruta) // 1024, 'KB', flush=True)
+
+
+def indice(salida):
+    """El índice del paquete: qué archivo es cada estado y cada paso, y cuánto pesa."""
+    est, tr, mov, peso = {}, {}, {}, {}
+    for v in todos_los_videos():
+        nombre = archivo(v)
+        f = nombre + '.mp4'
+        if not os.path.exists(os.path.join(salida, f)):
+            continue
+        peso[f] = os.path.getsize(os.path.join(salida, f))
+        mov[nombre] = nombre + '.mov.json'
+        if v[0] == 'bucle':
+            est[nombre_estado(*v[1])] = f
+        else:
+            tr[nombre_estado(*v[1]) + '>' + nombre_estado(*v[2])] = f
+    i = dict(version=3, fps=FPS, segundos=PERIODO, transicion=TRANSICION, entrada_ms=0, horizonte=HORIZONTE,
+             escalera=ESCALERA, luces=list(LUCES), estados=est, transiciones=tr, movimiento=mov, bytes=peso)
+    with open(os.path.join(salida, 'indice.json'), 'w') as f:
+        json.dump(i, f, indent=1)
+    return i
+
+
 if __name__ == '__main__':
+    if sys.argv[1] == 'lista':
+        # cuántos videos hay y cómo se reparten entre trabajos: python3 oceano.py lista N
+        todos = todos_los_videos()
+        n = int(sys.argv[2])
+        print(json.dumps(list(range(n))))
+        sys.exit(0)
+    if sys.argv[1] == 'hornear':
+        # python3 oceano.py hornear SALIDA PARTE DE_CUANTAS
+        salida, parte, total = sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+        os.makedirs(salida, exist_ok=True)
+        cam = Camara(W_VIDEO, H_VIDEO, ss=1)
+        todos = todos_los_videos()
+        ya = set(os.environ.get('YA', '').split())
+        todos = [v for v in todos if archivo(v) + '.mp4' not in ya or archivo(v) + '.mov.json' not in ya]
+        # los pasos pesan el doble que los bucles: se reparten por turnos para equilibrar
+        for i, v in enumerate(todos):
+            if i % total == parte:
+                hornear(v, salida, cam)
+        sys.exit(0)
+    if sys.argv[1] == 'indice':
+        print(json.dumps(indice(sys.argv[2]))[:400])
+        sys.exit(0)
     if sys.argv[1] == 'prueba':
         prueba(sys.argv[2])
