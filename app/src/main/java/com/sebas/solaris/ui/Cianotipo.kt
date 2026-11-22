@@ -72,44 +72,27 @@ import kotlin.random.Random
 
 // ---------------- los estados ----------------
 
-/** Cómo se llama cada estado en pantalla. */
-val NombresEstado = mapOf(
-    "calma" to "CALMA SOLEMNE", "espejo" to "ESPEJO", "mar_de_fondo" to "MAR DE FONDO", "mar_bravo" to "MAR BRAVO",
-    "temporal" to "TEMPORAL", "chubasco" to "CHUBASCO", "niebla" to "NIEBLA", "nevada" to "NEVADA",
-    "hora_azul" to "HORA AZUL", "alba" to "ALBA", "ocaso" to "OCASO", "noche" to "NOCHE CERRADA",
-    "luna_llena" to "LUNA LLENA", "aurora" to "AURORA AUSTRAL", "temporal_noche" to "TEMPORAL NOCTURNO",
-)
-private val Nocturnos = setOf("noche", "luna_llena", "aurora", "temporal_noche")
+/** La altura de ola como aparece en el nombre de un estado: 1.5 → "1.5", 3.0 → "3". */
+fun etiquetaOla(h: Double): String = if (h % 1.0 == 0.0) h.toInt().toString() else h.toString()
+
+/** La luz que hay en el Drake: día, crepúsculo (alba u ocaso) o noche. */
+fun luzReal(m: Mar, ahora: Long = System.currentTimeMillis()): String {
+    val h = m.horaNumero(ahora)
+    return when {
+        abs(h - m.salida) < 0.6 -> "crep"
+        h > m.puesta - 0.5 && h < m.puesta + 0.7 -> "crep"
+        !m.esDia -> "noche"
+        else -> "dia"
+    }
+}
 
 /**
- * El estado que dicen los datos reales del Drake. Cada estado horneado tiene su altura de ola
- * (espejo 0,7 m, calma 2,4 m, mar de fondo 6 m largo y liso, mar bravo 7 m picado, temporal 10 m):
- * se elige el más parecido a lo que de verdad hay, no el más tranquilo.
+ * El estado que dicen los datos reales del Drake: su luz y la altura de ola más cercana de la escalera
+ * (1, 1,5, 2, 3, 4, 5, 6, 8 y 10 m). Nombres como "dia_3m" o "noche_1.5m".
  */
 fun estadoReal(m: Mar, ahora: Long = System.currentTimeMillis()): String {
-    val h = m.horaNumero(ahora)
-    val tormenta = m.viento >= 34 || m.ola >= 7.5
-    val bravo = m.viento >= 22 || m.ola >= 4.5
-    val gruesa = m.ola >= 3.0 || m.viento >= 16
-    return when {
-        tormenta && !m.esDia -> "temporal_noche"
-        tormenta -> "temporal"
-        m.nieva -> if (m.esDia) "nevada" else "noche"
-        m.lluvia > 2.0 && m.esDia -> "chubasco"
-        bravo && !m.esDia -> "temporal_noche"
-        bravo -> "mar_bravo"
-        m.visibilidad < 1.5 && m.esDia -> "niebla"
-        // con mar gruesa el cielo de la hora no tapa el oleaje: se ve el mar como está
-        gruesa && m.esDia -> "mar_de_fondo"
-        abs(h - m.salida) < 0.75 -> "alba"
-        h > m.puesta - 0.4 && h < m.puesta + 0.5 -> "ocaso"
-        h >= m.puesta + 0.5 && h < m.puesta + 1.2 -> "hora_azul"
-        !m.esDia && m.kp >= 5 && m.nubes < 60 -> "aurora"
-        !m.esDia && m.luna(ahora) > 0.75 && m.nubes < 75 -> "luna_llena"
-        !m.esDia -> "noche"
-        m.viento < 6 && m.ola < 1.3 -> "espejo"
-        else -> "calma"
-    }
+    val ola = Paquete.escalera.minByOrNull { abs(it - m.ola) } ?: 3.0
+    return luzReal(m, ahora) + "_" + etiquetaOla(ola) + "m"
 }
 
 /**
@@ -118,14 +101,14 @@ fun estadoReal(m: Mar, ahora: Long = System.currentTimeMillis()): String {
  */
 object Corriente {
     /** Hacia dónde va el mar (el estado real del Drake). */
-    var objetivo by mutableStateOf("calma")
+    var objetivo by mutableStateOf("dia_3m")
         private set
     /** Lo que se está viendo (lo pone el reproductor cuando un bucle empieza). */
-    var visible by mutableStateOf("calma")
+    var visible by mutableStateOf("dia_3m")
     private var iniciada = false
 
-    /** Nombre del mar que se ve. */
-    val nombreVisible: String get() = NombresEstado[visible] ?: Clima.mar.nombre
+    /** Nombre del mar que se ve (el del Drake). */
+    val nombreVisible: String get() = Clima.mar.nombre
 
     /** Al abrir: el mar ya está en el estado que toca (sin pasar antes por otro). */
     fun iniciar(m: Mar) {
@@ -228,7 +211,7 @@ private class Mareas(private val ctx: android.content.Context) {
         val tr = Paquete.transicion(a, b) ?: return
         val bb = Paquete.bucle(b) ?: return
         jugador.addMediaItem(item("trans:$a>$b", tr))
-        jugador.addMediaItem(item("entrada:$b", bb, Paquete.entradaMs))
+        if (Paquete.entradaMs > 0) jugador.addMediaItem(item("entrada:$b", bb, Paquete.entradaMs))
         jugador.addMediaItem(item("bucle:$b", bb))
         // el bucle actual termina su vuelta y la lista sigue sola
         jugador.repeatMode = Player.REPEAT_MODE_OFF
@@ -300,11 +283,32 @@ fun MarCianotipo(modifier: Modifier, vivo: Boolean = true) {
         while (isActive && listo) {
             Corriente.avanzar(Clima.mar)
             mareas.seguir()
+            // que en el celular esté el mar de ahora y su vecindad
+            Paquete.descargar(Corriente.visible, Corriente.objetivo)
             delay(60_000)
         }
     }
     // cuando llega un archivo nuevo del paquete, el mar puede usarlo
-    LaunchedEffect(Paquete.estados, listo) { if (listo) mareas.seguir() }
+    LaunchedEffect(Paquete.llegados, listo) { if (listo) mareas.seguir() }
+
+    // el barco: cabecea y se balancea con las olas que tiene debajo (o la cámara quieta, si se prefiere)
+    LaunchedEffect(vivo, Balanceo.quieta, lienzo) {
+        val tv = lienzo ?: return@LaunchedEffect
+        if (!vivo) return@LaunchedEffect
+        if (Balanceo.quieta) { MarVivo.mover(tv, mareas.jugador, 0f, 0f, 1f); return@LaunchedEffect }
+        while (isActive) {
+            withFrameNanos {
+                val id = mareas.jugador.currentMediaItem?.mediaId ?: ""
+                val video = when {
+                    id.startsWith("bucle:") -> id.substringAfter(':')
+                    id.startsWith("trans:") -> id.substringAfter(':').replace(">", "__")
+                    else -> null
+                }
+                val (cab, bal) = video?.let { Balanceo.en(it, mareas.jugador.currentPosition) } ?: (0f to 0f)
+                MarVivo.mover(tv, mareas.jugador, cab, bal, Balanceo.ZOOM)
+            }
+        }
+    }
 
     // el grano de la película salta 12 veces por segundo
     LaunchedEffect(vivo) {
@@ -314,11 +318,14 @@ fun MarCianotipo(modifier: Modifier, vivo: Boolean = true) {
         }
     }
 
-    val noche = if (!Clima.mar.esDia && Corriente.visible !in Nocturnos) 0.4f else 0f
+    // si todavía se ve un mar de día y allá ya es de noche (mientras el mar llega), se oscurece
+    val noche = if (!Clima.mar.esDia && !Corriente.visible.startsWith("noche") && !Corriente.visible.startsWith("crep")) 0.4f else 0f
 
     Box(modifier) {
+        // el cuadro quieto, con el mismo acercamiento que tendrá el video (así no salta al empezar)
+        val acerca = if (Balanceo.quieta) 1f else Balanceo.ZOOM
         androidx.compose.animation.Crossfade(quieto, animationSpec = tween(600), label = "quieto") { q ->
-            if (q != null) Image(q, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            if (q != null) Image(q, null, Modifier.fillMaxSize().graphicsLayer { scaleX = acerca; scaleY = acerca }, contentScale = ContentScale.Crop)
             else Image(painterResource(R.drawable.mar_quieto), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         }
         AndroidView(
@@ -357,16 +364,9 @@ private fun leerUltimo(f: File): ImageBitmap? =
 
 /** Une el reproductor a la superficie y recorta el video al centro para llenar la pantalla. */
 private fun conectar(tv: TextureView, jugador: ExoPlayer) {
-    fun recortar() {
-        val vs = jugador.videoSize
-        val w = tv.width.toFloat(); val h = tv.height.toFloat()
-        if (vs.width == 0 || vs.height == 0 || w == 0f || h == 0f) return
-        val escala = max(w / vs.width, h / vs.height)
-        tv.setTransform(Matrix().apply { setScale(vs.width * escala / w, vs.height * escala / h, w / 2f, h / 2f) })
-    }
-    tv.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> recortar() }
+    tv.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> MarVivo.recolocar(tv, jugador) }
     jugador.addListener(object : Player.Listener {
-        override fun onVideoSizeChanged(videoSize: VideoSize) = recortar()
+        override fun onVideoSizeChanged(videoSize: VideoSize) = MarVivo.recolocar(tv, jugador)
     })
     jugador.setVideoTextureView(tv)
     // el mar va a 60 cuadros: en pantallas de 90 o 120 Hz se le pide ese ritmo exacto para que no tiemble
@@ -375,9 +375,74 @@ private fun conectar(tv: TextureView, jugador: ExoPlayer) {
     }
 }
 
+/**
+ * Cómo se mueve el barco: las curvas de cabeceo y balanceo de cada video (horneadas con la física de las olas
+ * que hay bajo un casco de ~70 m), leídas al ritmo del video. Con [quieta], la cámara no se mueve.
+ */
+object Balanceo {
+    /** Un poco de acercamiento para que al inclinarse no se vean los bordes. */
+    const val ZOOM = 1.07f
+    private const val MAX_BAL = 1.6f
+    private const val MAX_CAB = 1.8f
+    private lateinit var prefs: android.content.SharedPreferences
+    var quieta by mutableStateOf(false)
+        private set
+    private val curvas = HashMap<String, FloatArray?>()
+
+    fun iniciar(ctx: android.content.Context) {
+        prefs = ctx.getSharedPreferences("mar", android.content.Context.MODE_PRIVATE)
+        quieta = prefs.getBoolean("camara_quieta", false)
+    }
+
+    fun fijarQuieta(q: Boolean) { quieta = q; prefs.edit().putBoolean("camara_quieta", q).apply() }
+
+    private fun curva(video: String): FloatArray? = curvas.getOrPut(video) {
+        val f = Paquete.movimiento(video) ?: return null
+        try {
+            val a = org.json.JSONObject(f.readText()).getJSONArray("mov")
+            FloatArray(a.length() * 2) { i -> a.getJSONArray(i / 2).getDouble(i % 2).toFloat() }
+        } catch (e: Exception) { null }
+    }
+
+    /** Cabeceo y balanceo (grados) en este momento del video. */
+    fun en(video: String, posMs: Long): Pair<Float, Float>? {
+        val c = curva(video) ?: return null
+        val n = c.size / 2
+        if (n < 2) return null
+        val x = (posMs / 1000f * 30f).coerceAtLeast(0f)
+        val i = x.toInt().coerceAtMost(n - 1)
+        val j = (i + 1).coerceAtMost(n - 1)
+        val f = x - i
+        val cab = c[i * 2] + (c[j * 2] - c[i * 2]) * f
+        val bal = c[i * 2 + 1] + (c[j * 2 + 1] - c[i * 2 + 1]) * f
+        return cab.coerceIn(-MAX_CAB, MAX_CAB) to bal.coerceIn(-MAX_BAL, MAX_BAL)
+    }
+}
+
 /** El mar que se está viendo, para poder fotografiarlo (al compartir una lámina). */
 object MarVivo {
     var lienzo: TextureView? = null
+    private var cab = 0f
+    private var bal = 0f
+    private var zoom = 1f
+    private val matriz = Matrix()
+
+    /** Recorta el video al centro para llenar la pantalla, con la inclinación del barco encima. */
+    fun recolocar(tv: TextureView, jugador: ExoPlayer) = mover(tv, jugador, cab, bal, zoom)
+
+    fun mover(tv: TextureView, jugador: ExoPlayer, cabeceo: Float, balanceo: Float, acerca: Float) {
+        cab = cabeceo; bal = balanceo; zoom = acerca
+        val vs = jugador.videoSize
+        val w = tv.width.toFloat(); val h = tv.height.toFloat()
+        if (vs.width == 0 || vs.height == 0 || w == 0f || h == 0f) return
+        val escala = max(w / vs.width, h / vs.height)
+        matriz.reset()
+        matriz.setScale(vs.width * escala / w * acerca, vs.height * escala / h * acerca, w / 2f, h / 2f)
+        // de proa arriba, el horizonte baja; el campo vertical del cuadro es de 78°
+        matriz.postTranslate(0f, cabeceo * h * acerca / 78f)
+        matriz.postRotate(-balanceo, w / 2f, h / 2f)
+        tv.setTransform(matriz)
+    }
     fun cuadro(): Bitmap? = try { lienzo?.takeIf { it.width > 0 }?.bitmap } catch (e: Exception) { null }
     /** Una foto muy chica del mar, para el vidrio (que de todas formas la desenfoca). */
     fun cuadroChico(): ImageBitmap? = try {

@@ -75,19 +75,30 @@ fun Ajustes() {
             }
             Grupo("El mar del Drake") {
                 val prog = com.sebas.solaris.Paquete.progreso
-                val completo = com.sebas.solaris.Paquete.completo
-                val mb = com.sebas.solaris.Paquete.peso / 1_000_000
+                val mb = com.sebas.solaris.Paquete.ocupado / 1_000_000
                 Parrafo(
                     when {
                         prog != null -> "Bajando el mar… " + (prog * 100).toInt() + " %"
-                        completo -> "El mar está entero en tu celular" + (if (mb > 0) " ($mb MB)" else "") + ": todos sus estados y las transiciones entre ellos."
-                        else -> "Los estados del mar y sus transiciones se bajan una vez" + (if (mb > 0) " (unos $mb MB)" else "") +
-                            ", solo con Wi-Fi. Mientras tanto se ve la calma."
+                        mb > 0 -> "En tu celular está el mar de ahora y sus vecinos ($mb MB). Cuando el Drake cambia, baja lo que haga falta (con Wi-Fi) y borra lo que ya quedó lejos."
+                        else -> "El mar baja por partes: primero el de ahora, después sus vecinos con Wi-Fi (unos 150 MB en total)."
                     },
                     Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                 )
                 com.sebas.solaris.Paquete.error?.let { Parrafo(it, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp)) }
-                if (prog == null && !completo) FilaAccion("Bajarlo ahora, aunque no haya Wi-Fi") { com.sebas.solaris.Paquete.descargar(ahora = true) }
+                if (prog == null) FilaAccion("Bajar los mares vecinos ahora, aunque no haya Wi-Fi") {
+                    com.sebas.solaris.Paquete.descargar(Corriente.visible, Corriente.objetivo, ahora = true)
+                }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Cámara quieta", color = p.texto, fontFamily = Sans, fontSize = 16.sp)
+                        Text("Sin el cabeceo ni el balanceo del barco", color = p.texto2, fontFamily = Sans, fontSize = 13.sp)
+                    }
+                    Switch(
+                        checked = Balanceo.quieta,
+                        onCheckedChange = { Balanceo.fijarQuieta(it); Sonidos.tic() },
+                        colors = SwitchDefaults.colors(checkedTrackColor = Azules.Cianotipo, checkedThumbColor = Color.White),
+                    )
+                }
             }
             GrupoBoyas { b -> boya = b; editandoBoya = true }
             GrupoNotion { paginas, archivos -> notion = paginas to archivos }
