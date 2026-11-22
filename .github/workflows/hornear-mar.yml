@@ -57,6 +57,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Herramientas
+        run: pip install -q numpy pillow
       - name: Armar el índice
         env:
           GH_TOKEN: ${{ github.token }}
