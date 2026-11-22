@@ -67,7 +67,7 @@ private class Rayo(semilla: Long, val lejano: Boolean) {
         val x0 = 0.15f + r.nextFloat() * 0.7f
         val y0 = if (lejano) 0.2f + r.nextFloat() * 0.06f else 0.04f + r.nextFloat() * 0.08f
         val x1 = x0 + (r.nextFloat() - 0.5f) * 0.35f * escala
-        arriba = Offset(x0, y0); abajo = Offset(x1, 0.37f)
+        arriba = Offset(x0, y0); abajo = Offset(x1, com.sebas.solaris.Paquete.horizonte)
         partir(arriba, abajo, 0.26f * escala, 9, 1f, r)
         // golpe, apagón, réplica, apagón, a veces otra réplica, y un resplandor que se va
         val sec = mutableListOf(1f, 0.35f, 0f, 0.85f, 0.25f, 0f, 0f)
@@ -104,15 +104,12 @@ private class Rayo(semilla: Long, val lejano: Boolean) {
 
 // ---------------- la tormenta ----------------
 
-/** Los estados donde puede haber tormenta eléctrica a la vista. */
-private val ConTormenta = setOf("temporal", "temporal_noche", "chubasco", "mar_bravo")
-
 /** Dónde cae el cuadro del video (450×1000, recortado al centro) en una pantalla de w×h. */
 private class Encuadre(val w: Float, val h: Float) {
     private val vw = 450f; private val vh = 1000f
     private val esc = max(w / vw, h / vh)
     fun aPantalla(fx: Float, fy: Float) = Offset(w / 2 + (fx * vw - vw / 2) * esc, h / 2 + (fy * vh - vh / 2) * esc)
-    val horizonte: Float get() = aPantalla(0f, 0.37f).y
+    val horizonte: Float get() = aPantalla(0f, com.sebas.solaris.Paquete.horizonte).y
 }
 
 /** Pinta un rayo una sola vez: el trazo en el cielo y su reflejo roto en el agua. */
@@ -168,9 +165,9 @@ fun Tormenta(vivo: Boolean) {
 
     LaunchedEffect(vivo) {
         while (isActive && vivo) {
-            val hay = Clima.mar.rayos && Corriente.visible in ConTormenta
+            val hay = Clima.mar.rayos
             if (hay && tam.width > 0 && rayos.size < 2 && Random.nextFloat() < 0.06f) {
-                val lejano = Corriente.visible == "mar_bravo" || Random.nextFloat() < 0.35f
+                val lejano = Random.nextFloat() < 0.45f
                 val r = Rayo(Random.nextLong(), lejano)
                 // se pinta aparte, y recién entonces cae
                 val img = withContext(Dispatchers.Default) { pintar(r, tam.width, tam.height, densidad) }
