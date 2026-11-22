@@ -235,8 +235,10 @@ fun HojaInsertar(visible: Boolean, alElegir: (String) -> Unit, alCerrar: () -> U
         Text("Poner en la lámina", color = p.texto, fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 17.sp)
         OpcionInsertar("Cita destacada", "Una frase tuya, grande, en el centro de la página.") { alElegir("cita") }
         OpcionInsertar("Ola que separa", "Una línea de ola para cambiar de tema o de momento.") { alElegir("ola") }
-        OpcionInsertar("Pegar una voz", "Una de tus voces o rumores, para escucharla aquí.") { alElegir("voz") }
-        OpcionInsertar("Foto", "Pegada como en un cuaderno, sola o al lado del texto.") { alElegir("foto") }
+        OpcionInsertar("Foto", "Va donde está el cursor: sola, al lado del texto, a sangre o en collage.") { alElegir("foto") }
+        OpcionInsertar("Grabar aquí", "Abre la grabadora; el casete queda donde está el cursor.") { alElegir("grabar") }
+        OpcionInsertar("Pegar una voz", "Una de tus voces o rumores, como casete que suena aquí.") { alElegir("voz") }
+        OpcionInsertar("Pegar encima…", "Polaroids, cinta, notas adhesivas, boletos, sellos, trazos a mano.") { alElegir("pegar") }
     }
 }
 
