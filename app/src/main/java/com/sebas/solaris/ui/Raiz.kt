@@ -61,6 +61,8 @@ object Nav {
     var cambiarPin by mutableStateOf(false)
     /** Grabando sobre el mar. */
     var grabando by mutableStateOf(false)
+    /** Si se graba desde una nota: qué hacer con la cinta al entregarla (pegarla donde estaba el cursor). */
+    var alGrabar: ((String) -> Unit)? = null
     /** La cinta abierta para escuchar. */
     var escuchando by mutableStateOf<String?>(null)
     /** Lo que pidió el widget ("escribir" o "grabar"). */
@@ -101,7 +103,7 @@ fun Solaris(act: MainActivity) {
     Box(Modifier.fillMaxSize().background(if (enCasa) Color.Black else p.fondo)) {
         // un solo mar, debajo de todo: la entrada y la orilla son el mismo; sigue vivo mientras uno escribe (escribir lo mueve)
         if (enCasa) {
-            val enSuperficie = Nav.listaOrilla.firstVisibleItemIndex == 0
+            val enSuperficie by remember { derivedStateOf { Nav.listaOrilla.firstVisibleItemIndex == 0 } }
             val marVivo = !Casa.abierta || Nav.borrador != null || (!encima && enSuperficie)
             DisposableEffect(Unit) { Vidrio.activo = true; onDispose { Vidrio.activo = false } }
             // El vidrio no mira el video en vivo (eso costaba un desenfoque por cuadro): mira una foto chiquita

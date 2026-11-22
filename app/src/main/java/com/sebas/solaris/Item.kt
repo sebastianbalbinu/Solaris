@@ -10,6 +10,8 @@ import kotlin.math.max
  * Todo lo que vive en la casa es un Item: una página ("entrada") o una habitación ("cuarto").
  * Supabase nunca ve estos campos: el Item completo se cifra antes de salir.
  */
+/** Inmutable: Compose puede saltarse las tarjetas que no cambiaron al deslizar. */
+@androidx.compose.runtime.Immutable
 data class Item(
     val id: String,
     val kind: String,
@@ -115,27 +117,44 @@ data class Forma(
     val margen: Int = 1,
     /** El cuerpo en serif, como un libro, aunque no sea poema. */
     val serif: Boolean = false,
+    /** El papel: 0 liso, 1 rayado, 2 cuadriculado, 3 kraft, 4 cuaderno (con margen rojo), 5 fotográfico. */
+    val papel: Int = 0,
+    /** La letra: 0 la de siempre (sans o serif), 1 máquina de escribir, 2 a mano. */
+    val letra: Int = 0,
 ) {
     fun texto() = listOfNotNull(
         "centro".takeIf { centro }, "poema".takeIf { poema }, "capitular".takeIf { capitular },
         "aire$aire".takeIf { aire != 1 }, "margen$margen".takeIf { margen != 1 }, "serif".takeIf { serif },
+        "papel$papel".takeIf { papel != 0 }, "letra$letra".takeIf { letra != 0 },
     ).joinToString(",")
     /** El poema siempre va centrado. */
     val centrado: Boolean get() = centro || poema
     /** Cuánto se multiplica el interlineado. */
     val factorAire: Float get() = when (aire) { 0 -> 0.86f; 2 -> 1.22f; else -> 1f }
     /** Margen a cada lado, en dp. */
-    val margenDp: Int get() = when (margen) { 0 -> 16; 2 -> 40; else -> 24 }
+    val margenDp: Int get() = when (margen) { 0 -> 16; 2 -> 40; else -> 24 } + (if (papel == 4) 14 else 0)
     companion object {
+        private fun entero(f: Set<String>, prefijo: String, def: Int, max: Int) =
+            f.firstOrNull { it.startsWith(prefijo) }?.removePrefix(prefijo)?.toIntOrNull()?.coerceIn(0, max) ?: def
         fun de(s: String?): Forma {
             val f = s?.split(",")?.map { it.trim() }?.toSet() ?: emptySet()
             return Forma(
                 "centro" in f, "poema" in f, "capitular" in f,
-                aire = when { "aire0" in f -> 0; "aire2" in f -> 2; else -> 1 },
-                margen = when { "margen0" in f -> 0; "margen2" in f -> 2; else -> 1 },
+                aire = entero(f, "aire", 1, 2),
+                margen = entero(f, "margen", 1, 2),
                 serif = "serif" in f,
+                papel = entero(f, "papel", 0, 5),
+                letra = entero(f, "letra", 0, 2),
             )
         }
+        /** Plantillas para empezar una página. */
+        val Plantillas = listOf(
+            "Revista" to Forma(capitular = true, margen = 2, serif = true),
+            "Cuaderno" to Forma(papel = 4, letra = 2, aire = 2),
+            "Álbum" to Forma(papel = 3, letra = 1, margen = 0),
+            "Carta" to Forma(papel = 1, serif = true, aire = 2, margen = 2),
+            "Bitácora" to Forma(papel = 2, letra = 1),
+        )
     }
 }
 

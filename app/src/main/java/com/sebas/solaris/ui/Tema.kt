@@ -29,6 +29,10 @@ val Mono = FontFamily(
     Font(R.font.plex_mono_medium, FontWeight.Medium),
 )
 
+/** Máquina de escribir (Special Elite) y letra a mano (Caveat), para personalizar las notas. */
+val Maquina = FontFamily(Font(R.font.maquina, FontWeight.Normal))
+val Mano = FontFamily(Font(R.font.mano, FontWeight.Normal))
+
 /** Colores de un modo. */
 data class Paleta(
     val fondo: Color,

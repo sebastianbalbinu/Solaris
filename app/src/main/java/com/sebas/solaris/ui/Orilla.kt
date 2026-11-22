@@ -109,7 +109,7 @@ fun Orilla() {
                     )
                 }
             }
-            items(registros, key = { it.id }) { r ->
+            items(registros, key = { it.id }, contentType = { if (it.esCinta) 1 else 0 }) { r ->
                 Tarjeta(r) {
                     Sonidos.tic()
                     if (r.esCinta) Nav.escuchando = r.id else Nav.abrirNota(r.id)
@@ -118,31 +118,34 @@ fun Orilla() {
         }
 
         // niebla en los bordes: los registros se disuelven arriba y abajo en vez de cortarse
-        val niebla = ((hondura - 0.5f) / 0.5f).coerceIn(0f, 1f)
-        if (niebla > 0.01f) {
-            Box(
-                Modifier.fillMaxWidth().graphicsLayer { alpha = niebla * retirada }.nieblaDeBorde(arriba = true)
-                    .statusBarsPadding().height(72.dp)
-            )
-            Box(
-                Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                    .graphicsLayer { alpha = niebla * retirada }.nieblaDeBorde(arriba = false)
-                    .navigationBarsPadding().height(150.dp)
-            )
-        }
+        // (se lee solo al dibujar: deslizar no recompone la orilla)
+        val niebla = { ((hondura - 0.5f) / 0.5f).coerceIn(0f, 1f) }
+        Box(
+            Modifier.fillMaxWidth().graphicsLayer { alpha = niebla() * retirada }.nieblaDeBorde(arriba = true)
+                .statusBarsPadding().height(72.dp)
+        )
+        Box(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                .graphicsLayer { alpha = niebla() * retirada }.nieblaDeBorde(arriba = false)
+                .navigationBarsPadding().height(150.dp)
+        )
 
-        // la profundidad, arriba, mientras uno está hondo
-        if (hondo) {
-            Row(
-                Modifier.statusBarsPadding().padding(horizontal = 24.dp, vertical = 10.dp).graphicsLayer { alpha = ((hondura - 0.6f) / 0.4f).coerceIn(0f, 1f) },
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Senal("Profundidad  −$metros m", color = Azules.Espuma)
-            }
-        }
+        // la profundidad, arriba, mientras uno está hondo (su propio pedacito: al cambiar no recompone la lista)
+        Profundidad({ hondo }, { hondura }, { metros })
 
         BotonUnico(Modifier.align(Alignment.BottomCenter).graphicsLayer { alpha = retirada })
         Respiracion()
+    }
+}
+
+@Composable
+private fun Profundidad(hondo: () -> Boolean, hondura: () -> Float, metros: () -> Int) {
+    if (!hondo()) return
+    Row(
+        Modifier.statusBarsPadding().padding(horizontal = 24.dp, vertical = 10.dp).graphicsLayer { alpha = ((hondura() - 0.6f) / 0.4f).coerceIn(0f, 1f) },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Senal("Profundidad  −${metros()} m", color = Azules.Espuma)
     }
 }
 
@@ -315,16 +318,22 @@ private fun Tarjeta(r: Item, alTocar: () -> Unit) {
         r.esCinta -> "Voz"
         else -> "Escrito"
     }
-    val titulo = when {
-        r.esCinta -> r.title.ifBlank { "cinta sin nombre" }
-        else -> r.title.ifBlank { sinMarcas(com.sebas.solaris.Marcas.limpio(r.text).lineSequence().firstOrNull { it.isNotBlank() } ?: "Fotos") }
+    // los textos se calculan una vez por versión de la nota (no en cada cuadro del deslizamiento)
+    val (titulo, sub) = remember(r.id, r.updated, r.title, r.text) {
+        val limpio = if (r.esCinta) r.text else com.sebas.solaris.Marcas.limpio(r.text)
+        val t = when {
+            r.esCinta -> r.title.ifBlank { "cinta sin nombre" }
+            else -> r.title.ifBlank { sinMarcas(limpio.lineSequence().firstOrNull { it.isNotBlank() } ?: "Fotos") }
+        }
+        val s = when {
+            r.esRumor -> duracion(r.dur) + " · solo sonido"
+            r.esCinta -> if (r.text.isNotBlank()) "“" + r.text.replace('\n', ' ').take(90) + "”" else duracion(r.dur) + " · sin transcribir"
+            r.title.isBlank() -> sinMarcas(limpio.lineSequence().filter { it.isNotBlank() }.drop(1).joinToString(" ").take(300))
+            else -> sinMarcas(limpio.take(400).replace('\n', ' '))
+        }
+        t to s
     }
-    val sub = when {
-        r.esRumor -> duracion(r.dur) + " · solo sonido"
-        r.esCinta -> if (r.text.isNotBlank()) "“" + r.text.replace('\n', ' ').take(90) + "”" else duracion(r.dur) + " · sin transcribir"
-        r.title.isBlank() -> sinMarcas(com.sebas.solaris.Marcas.limpio(r.text).lineSequence().filter { it.isNotBlank() }.drop(1).joinToString(" "))
-        else -> sinMarcas(com.sebas.solaris.Marcas.limpio(r.text).replace('\n', ' '))
-    }
+    val haceTexto = remember(r.created, r.esCinta, r.esRumor) { tipo + " · " + hace(r.created) + " · −" + diasDesde(r.created) + " m" }
     Row(
         Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth()
             .presionable { alTocar() }
@@ -334,10 +343,13 @@ private fun Tarjeta(r: Item, alTocar: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Senal(tipo + " · " + hace(r.created) + " · −" + diasDesde(r.created) + " m", color = Azules.Bruma)
+            Senal(haceTexto, color = Azules.Bruma)
             Text(titulo, color = Azules.Crema, fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 19.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (sub.isNotBlank()) Text(sub, color = Azules.Espuma, fontFamily = Sans, fontSize = 14.sp, lineHeight = 19.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (r.esCinta) Onda(r.id, Modifier.padding(top = 6.dp).fillMaxWidth(0.7f).height(22.dp))
+        }
+        if (r.esCinta) {
+            Spacer(Modifier.width(14.dp))
+            CaseteMini(r, Modifier.width(76.dp))
         }
         r.photos.firstOrNull()?.let { f ->
             Spacer(Modifier.width(14.dp))

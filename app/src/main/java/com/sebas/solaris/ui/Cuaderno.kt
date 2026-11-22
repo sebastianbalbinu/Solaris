@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,6 +27,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -78,6 +86,24 @@ fun Editor(b: Borrador) {
     var hojaVoces by remember { mutableStateOf(false) }
     var fotoAbierta by remember { mutableStateOf<String?>(null) }
     var diagramar by remember { mutableStateOf(false) }
+    // pegados: la hoja de pegar, el que está elegido, dibujar a mano, y los textos de notas y boletos
+    var hojaPegar by remember { mutableStateOf(false) }
+    var hojaVozPegada by remember { mutableStateOf(false) }
+    var elegido by remember { mutableStateOf<String?>(null) }
+    var dibujando by remember { mutableStateOf(false) }
+    var colorTrazo by remember { mutableIntStateOf(0) }
+    val trazos = remember { mutableStateListOf<TrazoVivo>() }
+    var editandoTexto by remember { mutableStateOf<String?>(null) }
+    var casetePara by remember { mutableStateOf<Bloque?>(null) }
+    // arrastrar una foto o un casete manteniéndolo presionado
+    var arrastrando by remember { mutableStateOf<String?>(null) }
+    var desfaseArrastre by remember { mutableFloatStateOf(0f) }
+    val altos = remember { HashMap<String, Int>() }
+    // dónde está cada bloque en la pantalla, para pegar cosas en lo que se está viendo
+    val posiciones = remember { HashMap<String, androidx.compose.ui.geometry.Rect>() }
+    var ventana by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+    var origenDibujo by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    val densidad = androidx.compose.ui.platform.LocalDensity.current.density
     val ctxEditor = androidx.compose.ui.platform.LocalContext.current
     val enfoque = androidx.compose.ui.platform.LocalFocusManager.current
     // la lámina se graba en una capa solo cuando se va a compartir (grabarla siempre gastaba en cada cuadro)
@@ -142,6 +168,77 @@ fun Editor(b: Borrador) {
         sincronizar()
     }
 
+    /** El bloque que está a la vista en [yPantalla] (px de pantalla) y cuánto más abajo de su borde (dp). */
+    fun bloqueEn(yPantalla: Float): Pair<Bloque, Float>? {
+        val visibles = bloques.mapNotNull { bl -> posiciones[bl.clave]?.let { bl to it } }
+        if (visibles.isEmpty()) return null
+        val (bl, r) = visibles.firstOrNull { (_, r) -> yPantalla >= r.top && yPantalla <= r.bottom }
+            ?: visibles.minByOrNull { (_, r) -> kotlin.math.min(kotlin.math.abs(r.top - yPantalla), kotlin.math.abs(r.bottom - yPantalla)) }!!
+        return bl to (yPantalla - r.top) / densidad
+    }
+    fun pegarAqui(tipo: String, dato: String) {
+        val centro = if (ventana.height > 0) ventana.top + ventana.height * 0.45f else 600f
+        val (bl, y) = bloqueEn(centro) ?: (destino() to 40f)
+        val nuevo = pegadoNuevo(tipo, dato, y, if (tipo == com.sebas.solaris.Pegado.CINTA || tipo == com.sebas.solaris.Pegado.CLIP) 1f else 0.95f)
+        bl.pegados.add(nuevo)
+        elegido = nuevo.clave
+        sincronizar()
+        if (tipo == com.sebas.solaris.Pegado.NOTA || tipo == com.sebas.solaris.Pegado.BOLETO) editandoTexto = nuevo.clave
+    }
+    fun buscarPegado(clave: String): Pair<Bloque, Int>? {
+        for (bl in bloques) { val i = bl.pegados.indexOfFirst { it.clave == clave }; if (i >= 0) return bl to i }
+        return null
+    }
+    fun quitarPegado(clave: String) {
+        buscarPegado(clave)?.let { (bl, i) -> bl.pegados.removeAt(i) }
+        elegido = null
+        bloques.reemplazar(ordenar(bloques.toList()))
+        sincronizar()
+    }
+    fun terminarDibujo() {
+        for (t in trazos) {
+            val (centroLocal, dato) = trazoAPegado(t, densidad) ?: continue
+            val centro = centroLocal + origenDibujo
+            val (bl, y) = bloqueEn(centro.y) ?: continue
+            val r = posiciones[bl.clave] ?: continue
+            bl.pegados.add(com.sebas.solaris.Pegado(com.sebas.solaris.Pegado.TRAZO, ((centro.x - r.left) / r.width.coerceAtLeast(1f)), y, 0f, 1f, dato))
+        }
+        trazos.clear()
+        dibujando = false
+        sincronizar()
+    }
+    // la foto de un pegado (polaroid o con esquineros)
+    var fotoPegadaTipo by remember { mutableStateOf<String?>(null) }
+    val elegirFotoPegada = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        Casa.pausarCandado = false
+        val tipo = fotoPegadaTipo ?: return@rememberLauncherForActivityResult
+        if (uri != null) scope.launch {
+            val id = Casa.agregarFoto(uri) ?: return@launch
+            b.estilos = b.estilos + (id to com.sebas.solaris.EstiloFoto.nueva().texto()); b.fotosNuevas.add(id)
+            pegarAqui(tipo, id)
+        }
+    }
+    fun pegar(tipo: String, dato: String) {
+        hojaPegar = false
+        when (tipo) {
+            com.sebas.solaris.Pegado.POLAROID, com.sebas.solaris.Pegado.ESQUINAS -> {
+                fotoPegadaTipo = tipo
+                Casa.pausarCandado = true
+                elegirFotoPegada.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            }
+            com.sebas.solaris.Pegado.CASETE -> hojaVozPegada = true
+            com.sebas.solaris.Pegado.TRAZO -> { enfoque.clearFocus(); elegido = null; dibujando = true }
+            else -> pegarAqui(tipo, dato)
+        }
+    }
+    /** Grabar ahí mismo: el casete queda donde estaba el cursor. */
+    fun grabarAqui() {
+        val donde = destino()
+        enfoque.clearFocus()
+        Nav.alGrabar = { id -> insertar(donde, listOf(Bloque(com.sebas.solaris.Pieza.VOZ, listOf(id)))) }
+        Nav.grabando = true
+    }
+
     var dondeFoto by remember { mutableStateOf<Bloque?>(null) }
     val elegir = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(8)) { uris ->
         Casa.pausarCandado = false
@@ -173,8 +270,13 @@ fun Editor(b: Borrador) {
         sincronizar()
         diagramar = false
     }
-    BackHandler(enabled = !hojaLetra && !hojaOpciones && !hojaInsertar && !hojaVoces && fotoAbierta == null) {
-        if (diagramar) salirDeDiagramar() else guardarYSalir()
+    BackHandler(enabled = !hojaLetra && !hojaOpciones && !hojaInsertar && !hojaVoces && !hojaPegar && !hojaVozPegada && fotoAbierta == null && editandoTexto == null && casetePara == null) {
+        when {
+            dibujando -> terminarDibujo()
+            elegido != null -> elegido = null
+            diagramar -> salirDeDiagramar()
+            else -> guardarYSalir()
+        }
     }
 
     val forma = com.sebas.solaris.Forma.de(b.forma)
@@ -182,11 +284,12 @@ fun Editor(b: Borrador) {
 
     // la lámina: arriba se ve el mar, y a través del papel (con su grano) se adivinan sus relámpagos
     Box(Modifier.fillMaxSize()) {
+        val fondoPapel = colorDePapel(forma.papel, p.fondo)
         Box(
             Modifier.fillMaxSize().drawBehind {
                 val a = Tema.papelLamina
-                drawRect(Brush.verticalGradient(0f to Color.Transparent, 0.10f to p.fondo.copy(alpha = a * 0.45f), 0.28f to p.fondo.copy(alpha = a * 0.9f), 0.5f to p.fondo.copy(alpha = a), 1f to p.fondo.copy(alpha = (a * 1.02f).coerceAtMost(1f))))
-                drawRect(Vidrio.pincelGrano, alpha = if (Tema.esNoche) 0.35f else 0.7f)
+                drawRect(Brush.verticalGradient(0f to Color.Transparent, 0.10f to fondoPapel.copy(alpha = a * 0.45f), 0.28f to fondoPapel.copy(alpha = a * 0.9f), 0.5f to fondoPapel.copy(alpha = a), 1f to fondoPapel.copy(alpha = (a * 1.02f).coerceAtMost(1f))))
+                drawRect(Vidrio.pincelGrano, alpha = if (Tema.esNoche) 0.35f else if (forma.papel == 3) 1f else 0.7f)
             }
         )
     Box(Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
@@ -216,14 +319,20 @@ fun Editor(b: Borrador) {
                 Redondo(vidrio = true, alTocar = { hojaOpciones = true }) { IconoPuntos(p.texto) }
             }
             val margen = forma.margenDp.dp
+            val tamLetra = Tema.tamanoLetra.toFloat() + if (forma.poema) 1f else 0f
+            val pasoRenglon = (tamLetra * (if (forma.poema) 1.95f else if (forma.serif || forma.letra != 0) 1.7f else 1.62f) * forma.factorAire)
             Column(
-                Modifier.weight(1f).fillMaxWidth().bordesQueSeDisuelven(arriba = 36.dp, abajo = 96.dp).verticalScroll(desplazamiento)
+                Modifier.weight(1f).fillMaxWidth()
+                    .onGloballyPositioned { ventana = it.boundsInRoot() }
+                    .bordesQueSeDisuelven(arriba = 36.dp, abajo = 96.dp).verticalScroll(desplazamiento, enabled = !dibujando)
                     .drawWithContent {
                         if (capturar) {
                             capa.record { this@drawWithContent.drawContent() }
                             drawLayer(capa)
                         } else drawContent()
                     }
+                    // los renglones, la cuadrícula o el margen rojo del papel (se deslizan con el texto)
+                    .drawBehind { dibujarPapel(forma.papel, pasoRenglon.sp.toPx(), margen.toPx(), p.texto2) }
                     .padding(horizontal = margen).padding(top = 96.dp, bottom = 120.dp),
             ) {
                 val alinear = if (forma.centrado) TextAlign.Center else TextAlign.Start
@@ -233,17 +342,19 @@ fun Editor(b: Borrador) {
                     modifier = if (forma.centrado) Modifier.fillMaxWidth().wrapContentWidth(Alignment.CenterHorizontally) else Modifier,
                 )
                 Spacer(Modifier.height(10.dp))
+                val fuenteTitulo = when (forma.letra) { 1 -> Maquina; 2 -> Mano; else -> Serif }
                 Escribible(
                     b.titulo, { b.titulo = it }, "Título",
-                    TextStyle(color = p.texto, fontFamily = Serif, fontSize = 34.sp, lineHeight = 38.sp, textAlign = alinear),
+                    TextStyle(color = p.texto, fontFamily = fuenteTitulo, fontSize = (if (forma.letra == 2) 40 else if (forma.letra == 1) 28 else 34).sp, lineHeight = 40.sp, textAlign = alinear),
                 )
-                val tam = Tema.tamanoLetra.toFloat() + if (forma.poema) 1f else 0f
+                val tam = tamLetra
                 val enSerif = forma.poema || forma.serif
+                val fuente = when (forma.letra) { 1 -> Maquina; 2 -> Mano; else -> if (enSerif) Serif else Sans }
                 val estilo = TextStyle(
                     color = Tema.colorLetra,
-                    fontFamily = if (enSerif) Serif else Sans,
-                    fontSize = (if (enSerif) tam * 1.12f else tam).sp,
-                    lineHeight = (tam * (if (forma.poema) 1.95f else if (forma.serif) 1.7f else 1.62f) * forma.factorAire).sp,
+                    fontFamily = fuente,
+                    fontSize = (when { forma.letra == 2 -> tam * 1.32f; forma.letra == 1 -> tam * 0.96f; enSerif -> tam * 1.12f; else -> tam }).sp,
+                    lineHeight = pasoRenglon.sp,
                     textAlign = alinear,
                 )
                 val estiloLado = TextStyle(color = Tema.colorLetra, fontFamily = Sans, fontSize = (tam * 0.92f).sp, lineHeight = (tam * 1.5f * forma.factorAire).sp)
@@ -258,6 +369,42 @@ fun Editor(b: Borrador) {
                     var nFoto = 0
                     bloques.forEach { bl ->
                         key(bl.clave) {
+                          val arrastrado = arrastrando == bl.clave
+                          Box(
+                            Modifier.fillMaxWidth()
+                                .zIndex(if (arrastrado) 3f else if (bl.pegados.isNotEmpty()) 1f else 0f)
+                                .onGloballyPositioned { c ->
+                                    posiciones[bl.clave] = c.boundsInRoot()
+                                    AnchoBloques.actual = c.size.width.toFloat()
+                                    altos[bl.clave] = c.size.height
+                                }
+                                .graphicsLayer {
+                                    translationY = if (arrastrado) desfaseArrastre else 0f
+                                    val e = if (arrastrado) 1.03f else 1f
+                                    scaleX = e; scaleY = e
+                                    shadowElevation = if (arrastrado) 18.dp.toPx() else 0f
+                                }
+                                .then(if (bl.esMedio) Modifier.pointerInput(bl.clave) {
+                                    // mantener presionada una foto o un casete y arrastrarlo a otro lugar de la hoja
+                                    detectDragGesturesAfterLongPress(
+                                        onDragStart = { arrastrando = bl.clave; desfaseArrastre = 0f; Sonidos.tecla() },
+                                        onDragEnd = { arrastrando = null; desfaseArrastre = 0f; bloques.reemplazar(ordenar(bloques.toList())); sincronizar() },
+                                        onDragCancel = { arrastrando = null; desfaseArrastre = 0f },
+                                    ) { cambio, d ->
+                                        cambio.consume()
+                                        desfaseArrastre += d.y
+                                        val k = bloques.indexOfFirst { it.clave == bl.clave }
+                                        if (k < 0) return@detectDragGesturesAfterLongPress
+                                        if (desfaseArrastre > 0 && k < bloques.size - 1) {
+                                            val h = (altos[bloques[k + 1].clave] ?: 0).toFloat()
+                                            if (desfaseArrastre > h / 2) { bloques.add(k + 1, bloques.removeAt(k)); desfaseArrastre -= h; Sonidos.tic() }
+                                        } else if (desfaseArrastre < 0 && k > 0) {
+                                            val h = (altos[bloques[k - 1].clave] ?: 0).toFloat()
+                                            if (-desfaseArrastre > h / 2) { bloques.add(k - 1, bloques.removeAt(k)); desfaseArrastre += h; Sonidos.tic() }
+                                        }
+                                    }
+                                } else Modifier),
+                          ) {
                             when (bl.tipo) {
                                 com.sebas.solaris.Pieza.TEXTO -> {
                                     val formatoTexto = remember(Tema.esNoche, tam, forma.capitular, bl === primerTexto, p) {
@@ -301,15 +448,17 @@ fun Editor(b: Borrador) {
                                 }
                                 else -> {
                                     val c = remember(bl.ids, Casa.items) { bl.ids.firstOrNull()?.let { Casa.porId(it) }?.takeIf { !it.deleted } }
-                                    if (c == null) Unit else Box(Modifier.padding(vertical = 8.dp)) {
-                                        CintaPegada(c, alQuitar = {
-                                            bloques.remove(bl)
-                                            bloques.reemplazar(ordenar(bloques.toList()))
-                                            sincronizar()
-                                        }) { Nav.escuchando = c.id }
-                                    }
+                                    if (c == null) Unit else CasetePegado(c, bl.opcion, alOpciones = { casetePara = bl })
                                 }
                             }
+                            // lo pegado encima de este bloque
+                            if (bl.pegados.isNotEmpty()) CapaPegados(
+                                bl.pegados, b, elegido, editable = !dibujando,
+                                alElegir = { elegido = it; if (it != null) enfoque.clearFocus() },
+                                alCambiar = { sincronizar() },
+                                modifier = Modifier.matchParentSize(),
+                            )
+                          }
                         }
                     }
                 }
@@ -329,13 +478,49 @@ fun Editor(b: Borrador) {
             }
         }
 
+        // dibujar a mano: una capa encima de la hoja que se ve
+        if (dibujando) CapaDibujo(trazos, colorTrazo, Modifier.fillMaxSize().onGloballyPositioned { origenDibujo = it.positionInRoot() })
+
         Row(
             Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp, start = 12.dp, end = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            val sel = elegido?.let { buscarPegado(it) }
             if (diagramar) {
                 Pildora("Listo, así queda", icono = { IconoDiagramar(p.botonTexto, 18.dp) }) { salirDeDiagramar() }
+            } else if (dibujando) {
+                Row(
+                    Modifier.height(50.dp).vidrio(CircleShape, p.superficie, if (Tema.esNoche) 0.7f else 0.88f).padding(horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ColoresTinta.forEachIndexed { i, c ->
+                        Box(
+                            Modifier.size(28.dp).clip(CircleShape).background(c)
+                                .border(if (i == colorTrazo) 2.dp else 0.dp, p.texto, CircleShape).clickable { Sonidos.tic(); colorTrazo = i },
+                        )
+                    }
+                    Enlace("Deshacer") { if (trazos.isNotEmpty()) trazos.removeAt(trazos.size - 1) }
+                }
+                Pildora("Listo") { terminarDibujo() }
+            } else if (sel != null) {
+                val (blSel, iSel) = sel
+                val pg = blSel.pegados[iSel]
+                Row(
+                    Modifier.height(50.dp).vidrio(CircleShape, p.superficie, if (Tema.esNoche) 0.7f else 0.88f).padding(horizontal = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (pg.tipo == com.sebas.solaris.Pegado.NOTA || pg.tipo == com.sebas.solaris.Pegado.BOLETO || pg.tipo == com.sebas.solaris.Pegado.SELLO) {
+                        Enlace("Texto") { editandoTexto = pg.clave }
+                    }
+                    if (pg.tipo == com.sebas.solaris.Pegado.CASETE) Enlace("Escuchar") {
+                        val c = Casa.porId(pg.dato)
+                        if (c != null && Casa.archivoCinta(c.id).exists()) com.sebas.solaris.Grabadora.reproducir(c.id, Casa.archivoCinta(c.id))
+                    }
+                    Enlace("Enderezar") { blSel.pegados[iSel] = pg.copy(giro = 0f); sincronizar() }
+                    Enlace("Quitar", color = Color(0xFFD65C48)) { quitarPegado(pg.clave) }
+                }
+                Pildora("Listo") { elegido = null }
             } else {
                 Row(
                     Modifier.height(50.dp).vidrio(CircleShape, p.superficie, if (Tema.esNoche) 0.7f else 0.88f).padding(horizontal = 4.dp),
@@ -346,6 +531,8 @@ fun Editor(b: Borrador) {
                     BotonFormato({ Text("•", color = p.texto, fontFamily = Sans, fontSize = 22.sp) }) { destino().let { cambiar(it, alternarPrefijo(it.valor, "- ")) } }
                     BotonFormato({ Text("❝", color = p.texto, fontFamily = Sans, fontSize = 18.sp) }) { destino().let { cambiar(it, alternarPrefijo(it.valor, "> ")) } }
                     BotonFormato({ IconoMas(p.texto, 17.dp) }) { hojaInsertar = true }
+                    // pegar cosas encima de la hoja
+                    BotonFormato({ IconoPegar(p.texto) }) { enfoque.clearFocus(); hojaPegar = true }
                 }
                 Pildora("Listo") { guardarYSalir() }
             }
@@ -368,9 +555,57 @@ fun Editor(b: Borrador) {
                 "cita" -> destino().let { cambiar(it, alternarPrefijo(it.valor, "» ")) }
                 "ola" -> destino().let { cambiar(it, insertarLinea(it.valor, "~~~")) }
                 "voz" -> { dondeFoto = destino(); hojaVoces = true }
+                "grabar" -> grabarAqui()
                 "foto" -> pedirFoto()
+                "pegar" -> { enfoque.clearFocus(); hojaPegar = true }
             }
         }) { hojaInsertar = false }
+        HojaPegar(hojaPegar, alElegir = { tipo, dato -> pegar(tipo, dato) }) { hojaPegar = false }
+        HojaElegirVoz(hojaVozPegada, alElegir = { id -> hojaVozPegada = false; pegarAqui(com.sebas.solaris.Pegado.CASETE, id) }) { hojaVozPegada = false }
+        // el texto de una nota adhesiva, un boleto o un sello
+        val claveTexto = editandoTexto
+        val enTexto = claveTexto?.let { buscarPegado(it) }
+        var borradorTexto by remember(claveTexto) {
+            mutableStateOf(enTexto?.let { (bl, i) -> bl.pegados[i].let { pg -> if (pg.tipo == com.sebas.solaris.Pegado.NOTA) pg.dato.substringAfter('|', "") else if (pg.tipo == com.sebas.solaris.Pegado.SELLO) pg.dato.split('|').drop(1).joinToString(" / ") else pg.dato } } ?: "")
+        }
+        Hoja(enTexto != null, { editandoTexto = null }) {
+            val pg = enTexto?.let { (bl, i) -> bl.pegados.getOrNull(i) }
+            Text(
+                when (pg?.tipo) { com.sebas.solaris.Pegado.NOTA -> "La nota"; com.sebas.solaris.Pegado.SELLO -> "El sello (arriba / abajo)"; else -> "El boleto" },
+                color = p.texto, fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 17.sp,
+            )
+            Campo(borradorTexto, { borradorTexto = it }, if (pg?.tipo == com.sebas.solaris.Pegado.NOTA) "Lo que quieras recordar…" else "Un lugar, una fecha…")
+            Pildora("Listo", Modifier.fillMaxWidth()) {
+                enTexto?.let { (bl, i) ->
+                    val q = bl.pegados.getOrNull(i)
+                    if (q != null) bl.pegados[i] = q.copy(
+                        dato = when (q.tipo) {
+                            com.sebas.solaris.Pegado.NOTA -> q.dato.substringBefore('|', "0") + "|" + borradorTexto
+                            com.sebas.solaris.Pegado.SELLO -> q.dato.substringBefore('|', "0") + "|" + borradorTexto.split(" / ", limit = 2).let { it[0] + "|" + (it.getOrNull(1) ?: "") }
+                            else -> borradorTexto
+                        },
+                    )
+                    sincronizar()
+                }
+                editandoTexto = null
+            }
+        }
+        // el tamaño de un casete y lo demás
+        val bc = casetePara
+        Hoja(bc != null, { casetePara = null }) {
+            Text("El casete", color = p.texto, fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 17.sp)
+            SegmentoTema(TamCasete.todos.map { it.second }, TamCasete.todos.indexOfFirst { it.first == (bc?.opcion ?: "") }.coerceAtLeast(0)) { i ->
+                bc?.opcion = TamCasete.todos[i].first; sincronizar()
+            }
+            Parrafo("Escondido: asoma bajo el papel hasta que lo sacas. Para moverlo, mantenlo presionado y arrástralo.")
+            Pildora("Ver la cinta (nombre, transcripción)", Modifier.fillMaxWidth(), primaria = false) {
+                bc?.ids?.firstOrNull()?.let { Nav.escuchando = it }; casetePara = null
+            }
+            Pildora("Quitar de la nota", Modifier.fillMaxWidth(), primaria = false) {
+                bc?.let { bloques.remove(it); bloques.reemplazar(ordenar(bloques.toList())); sincronizar() }
+                casetePara = null
+            }
+        }
         HojaVoces(hojaVoces, b.voces, alAlternar = { id ->
             if (id in b.voces) {
                 bloques.removeAll { it.tipo == com.sebas.solaris.Pieza.VOZ && id in it.ids }
@@ -389,6 +624,7 @@ fun Editor(b: Borrador) {
                 if (compartiendo) return@Pildora
                 compartiendo = true
                 enfoque.clearFocus()
+                elegido = null
                 scope.launch {
                     // un par de cuadros para que se vaya el cursor, la hoja se cierre y la capa se grabe
                     hojaOpciones = false
@@ -404,11 +640,22 @@ fun Editor(b: Borrador) {
                     compartiendo = false
                 }
             }
-            Parrafo("Tal como la ves: tu diagramación, tus fotos y el mar de este momento detrás.")
+            Parrafo("Tal como la ves: tu diagramación, lo que pegaste encima y el mar de este momento detrás. El PDF también.")
             Pildora("Compartir como PDF", Modifier.fillMaxWidth(), primaria = false) {
-                hojaOpciones = false
+                if (compartiendo) return@Pildora
+                compartiendo = true
+                enfoque.clearFocus()
+                elegido = null
                 sincronizar()
-                scope.launch { compartirPdf(ctxEditor, b) }
+                scope.launch {
+                    // el PDF sale de la lámina tal como se ve: con todo lo pegado encima
+                    hojaOpciones = false
+                    capturar = true
+                    delay(450)
+                    try { compartirPdfDeLamina(ctxEditor, b, capa.toImageBitmap()) } catch (e: Throwable) { compartirPdf(ctxEditor, b) }
+                    capturar = false
+                    compartiendo = false
+                }
             }
             if (b.id != null) Parrafo("Borrarla la quita de este celular y de la nube, para siempre.")
             if (b.id != null) Pildora("Borrar nota", Modifier.fillMaxWidth(), primaria = false) {
@@ -534,6 +781,33 @@ fun HojaLetra(visible: Boolean, nota: Borrador? = null, alCerrar: () -> Unit) {
             Interruptor("Cuerpo en serif", "Todo el texto con la letra de los títulos, como un libro.", f.serif) {
                 nota.forma = f.copy(serif = it).texto()
             }
+            Text("Empezar desde una plantilla", color = p.texto2, fontFamily = Sans, fontSize = 13.sp)
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                com.sebas.solaris.Forma.Plantillas.forEach { (nombre, pl) ->
+                    Text(
+                        nombre, color = p.texto, fontFamily = when (pl.letra) { 1 -> Maquina; 2 -> Mano; else -> if (pl.serif) Serif else Sans },
+                        fontSize = if (pl.letra == 2) 20.sp else 15.sp,
+                        modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(colorDePapel(pl.papel, p.superficie))
+                            .border(1.dp, p.linea, RoundedCornerShape(14.dp))
+                            .clickable { com.sebas.solaris.Sonidos.tic(); nota.forma = pl.copy(centro = f.centro, poema = f.poema).texto() }
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                    )
+                }
+            }
+            Text("Papel", color = p.texto2, fontFamily = Sans, fontSize = 13.sp)
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("Liso", "Rayado", "Cuadriculado", "Kraft", "Cuaderno", "Fotográfico").forEachIndexed { i, nombre ->
+                    val sel = f.papel == i
+                    Text(
+                        nombre, color = if (sel) p.botonTexto else p.texto, fontFamily = Sans, fontSize = 14.sp,
+                        modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (sel) p.boton else p.superficie)
+                            .clickable { com.sebas.solaris.Sonidos.tic(); nota.forma = f.copy(papel = i).texto() }
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                    )
+                }
+            }
+            Text("Letra de esta nota", color = p.texto2, fontFamily = Sans, fontSize = 13.sp)
+            SegmentoTema(listOf("La de siempre", "Máquina", "A mano"), f.letra) { nota.forma = f.copy(letra = it).texto() }
             Text("Aire entre renglones", color = p.texto2, fontFamily = Sans, fontSize = 13.sp)
             SegmentoTema(listOf("Junto", "Normal", "Amplio"), f.aire) { nota.forma = f.copy(aire = it).texto() }
             Text("Márgenes", color = p.texto2, fontFamily = Sans, fontSize = 13.sp)
