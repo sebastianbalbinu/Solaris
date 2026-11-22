@@ -11,7 +11,6 @@ import android.graphics.Shader
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import com.sebas.solaris.ui.Nav
 import com.sebas.solaris.ui.Tema
@@ -41,12 +40,43 @@ class Laboratorio {
     private fun enLaApp(bloque: () -> Unit) = inst.runOnMainSync(bloque)
     private fun shell(c: String): String = dispositivo.executeShellCommand(c)
 
-    /** Mide los cuadros mientras corre [bloque] (dumpsys gfxinfo) y guarda el informe. */
+    private val resumen = StringBuilder()
+
+    /**
+     * Mide los cuadros mientras corre [bloque]. Además del informe de gfxinfo, saca del detalle por cuadro
+     * (framestats) cuánto trabajó el hilo de la app en cada uno: eso no depende de que el celular virtual
+     * dibuje lento, y sirve para comparar el antes y el después.
+     */
     private fun medir(nombre: String, bloque: () -> Unit) {
         shell("dumpsys gfxinfo $paquete reset")
         bloque()
-        File(dir, "medida_$nombre.txt").writeText(shell("dumpsys gfxinfo $paquete"))
+        val todo = shell("dumpsys gfxinfo $paquete framestats")
+        File(dir, "medida_$nombre.txt").writeText(todo)
+        val lineas = todo.lines()
+        val cab = lineas.indexOfFirst { it.startsWith("Flags,") }
+        if (cab < 0) { resumen.append("$nombre: sin datos\n"); return }
+        val col = lineas[cab].split(',')
+        val iIn = col.indexOf("HandleInputStart"); val iSync = col.indexOf("SyncQueued"); val iVs = col.indexOf("IntendedVsync"); val iFin = col.indexOf("FrameCompleted")
+        val hilo = mutableListOf<Double>(); val total = mutableListOf<Double>()
+        for (l in lineas.drop(cab + 1)) {
+            if (l.startsWith("---")) break
+            val v = l.split(',').mapNotNull { it.trim().toLongOrNull() }
+            if (v.size < col.size - 1 || v[0] != 0L) continue
+            hilo += (v[iSync] - v[iIn]) / 1e6
+            total += (v[iFin] - v[iVs]) / 1e6
+        }
+        fun pct(l: List<Double>, q: Double) = if (l.isEmpty()) 0.0 else l.sorted()[((l.size - 1) * q).toInt()]
+        resumen.append(
+            String.format(
+                java.util.Locale.US, "%-20s cuadros %4d | hilo de la app: mediana %6.1f ms, p90 %6.1f ms, >16 ms %5.1f%% | cuadro completo: mediana %6.1f ms, p90 %6.1f ms\n",
+                nombre, hilo.size, pct(hilo, 0.5), pct(hilo, 0.9), if (hilo.isEmpty()) 0.0 else hilo.count { it > 16.7 } * 100.0 / hilo.size, pct(total, 0.5), pct(total, 0.9),
+            )
+        )
+        File(dir, "resumen.txt").writeText(resumen.toString())
     }
+
+    /** Toca un punto de la pantalla (en px de un Pixel 6: 1080 × 2400). */
+    private fun tocar(x: Int, y: Int) { dispositivo.click(x * dispositivo.displayWidth / 1080, y * dispositivo.displayHeight / 2400) }
 
     // ---------------- la estación de ejemplo ----------------
 
@@ -228,6 +258,15 @@ class Laboratorio {
             enLaApp { Tema.fijarModo("dia"); Nav.borrador = null }; esperar(1500)
         }
 
+        // las hojas y modos del editor (en la nota cuaderno)
+        enLaApp { Nav.abrirNota("rica") }; esperar(2500)
+        tocar(700, 2224); esperar(1500); foto("17_hoja_pegar"); dispositivo.pressBack(); esperar(1000)
+        tocar(588, 2224); esperar(1500); foto("18_hoja_insertar"); dispositivo.pressBack(); esperar(1000)
+        tocar(984, 208); esperar(1500); foto("19_hoja_opciones"); dispositivo.pressBack(); esperar(1000)
+        tocar(720, 208); esperar(1500); foto("16_hoja_letra"); dispositivo.swipe(540, 2000, 540, 1100, 40); esperar(800); foto("16_hoja_letra_abajo"); dispositivo.pressBack(); esperar(1000)
+        tocar(460, 208); esperar(1500); foto("19_diagramar"); tocar(460, 208); esperar(1200)
+        enLaApp { Nav.borrador = null }; esperar(1500)
+
         // fluidez al abrir y cerrar notas
         medir("abrir_notas") {
             repeat(4) { enLaApp { Nav.abrirNota("rica") }; esperar(1600); enLaApp { Nav.borrador = null }; esperar(1600) }
@@ -246,10 +285,7 @@ class Laboratorio {
             esperar(1000)
         }
         foto("15_escribiendo_despues")
-        dispositivo.pressBack(); esperar(600)
-        // Aa: la hoja de letra y papel
-        dispositivo.findObject(By.text("Aa"))?.click(); esperar(1500); foto("16_hoja_letra")
-        dispositivo.pressBack(); esperar(1000)
+        shell("input keyevent 111"); esperar(600)
         enLaApp { Nav.borrador = null }; esperar(1500)
 
         // la grabadora, escuchar, ajustes
