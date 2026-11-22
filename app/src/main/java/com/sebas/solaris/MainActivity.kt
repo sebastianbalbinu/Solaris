@@ -30,7 +30,7 @@ class MainActivity : FragmentActivity() {
         Paquete.iniciar(this)
         com.sebas.solaris.ui.Balanceo.iniciar(this)
         Paquete.descargar()
-        Marea.iniciar(this)
+        if (!BuildConfig.LABORATORIO) Marea.iniciar(this)
         com.sebas.solaris.ui.Respiraciones.iniciar(this)
         recibir(intent)
         setContent { Solaris(this) }
@@ -44,7 +44,7 @@ class MainActivity : FragmentActivity() {
     override fun onResume() {
         super.onResume()
         // al volver: si se dio el permiso de instalar, sigue la actualización; si no, mira si hay marea nueva
-        Marea.alVolver(this)
+        if (!BuildConfig.LABORATORIO) Marea.alVolver(this)
     }
 
     override fun onNewIntent(intent: Intent) {

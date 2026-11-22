@@ -19,6 +19,8 @@ android {
         // Se llenan desde los secretos de GitHub. Si están vacíos, la app los pide al abrirse.
         buildConfigField("String", "SUPABASE_URL", "\"${secreto("SUPABASE_URL")}\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${secreto("SUPABASE_ANON_KEY")}\"")
+        buildConfigField("boolean", "LABORATORIO", "false")
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -48,7 +50,17 @@ android {
         debug {
             signingConfig = signingConfigs.getByName("logia")
         }
+        // el laboratorio: como la de uso (no depurable, para medir la fluidez real) pero con una estación de ejemplo
+        create("laboratorio") {
+            initWith(getByName("debug"))
+            isDebuggable = false
+            isProfileable = true
+            matchingFallbacks += listOf("debug")
+            buildConfigField("boolean", "LABORATORIO", "true")
+            signingConfig = signingConfigs.getByName("logia")
+        }
     }
+    testBuildType = "laboratorio"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -82,6 +94,11 @@ dependencies {
     implementation("dev.chrisbanes.haze:haze:1.1.1")
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
+
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:rules:1.6.1")
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")

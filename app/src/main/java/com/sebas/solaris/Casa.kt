@@ -289,7 +289,34 @@ object Casa {
         return true
     }
 
+    // ---------------- el laboratorio (solo en la versión de prueba) ----------------
+
+    /**
+     * Una estación de ejemplo para el laboratorio de capturas: notas, fotos y voces de mentira, sin nube.
+     * Deja la estación lista y cerrada (se ve la entrada); [abrirLaboratorio] la abre.
+     */
+    fun prepararLaboratorio(notas: List<Item>, fotos: Map<String, ByteArray>, cintas: Map<String, ByteArray>) {
+        if (!BuildConfig.LABORATORIO) return
+        val m = Crypto.azar(32)
+        maestra = m
+        fotos.forEach { (id, jpg) -> archivoFoto(id).writeBytes(Crypto.sellar(m, jpg)) }
+        cintas.forEach { (id, wav) -> archivoCinta(id).writeBytes(wav) }
+        notas.forEach { archivoItem(it.id).writeBytes(Crypto.sellar(m, it.json().toString().toByteArray(Charsets.UTF_8))) }
+        supa = null
+        conectada = true
+        lista = true
+        laboratorio = notas
+    }
+    private var laboratorio: List<Item> = emptyList()
+
+    fun abrirLaboratorio() {
+        if (!BuildConfig.LABORATORIO) return
+        items = laboratorio
+        abierta = true
+    }
+
     fun cerrar() {
+        if (BuildConfig.LABORATORIO) return
         if (!abierta) return
         maestra?.fill(0)
         maestra = null
