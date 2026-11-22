@@ -43,6 +43,8 @@ import com.sebas.solaris.Borrador
 import com.sebas.solaris.Casa
 import com.sebas.solaris.EstiloFoto
 import com.sebas.solaris.Forma
+import com.sebas.solaris.Marcas
+import com.sebas.solaris.Pieza
 import com.sebas.solaris.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -119,7 +121,8 @@ suspend fun compartirImagen(ctx: Context, b: Borrador, contenido: androidx.compo
 private suspend fun pdf(ctx: Context, b: Borrador): File? {
     val p = Tema.p
     val anchoPag = 420; val altoPag = 595 // A5, en puntos
-    val margen = 40f
+    val forma0 = Forma.de(b.forma)
+    val margen = when (forma0.margen) { 0 -> 28f; 2 -> 56f; else -> 40f }
     val ancho = anchoPag - margen * 2
     val sans = ResourcesCompat.getFont(ctx, R.font.sans_regular) ?: Typeface.SANS_SERIF
     val sansFuerte = ResourcesCompat.getFont(ctx, R.font.sans_semibold) ?: Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
@@ -181,8 +184,8 @@ private suspend fun pdf(ctx: Context, b: Borrador): File? {
 
     val tam = Tema.tamanoLetra * 0.66f
     val pCuerpo = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-        typeface = if (forma.poema) serif else sans
-        textSize = if (forma.poema) tam * 1.12f else tam
+        typeface = if (forma.poema || forma.serif) serif else sans
+        textSize = if (forma.poema || forma.serif) tam * 1.12f else tam
         color = Tema.colorLetra.toArgb()
     }
     val pLado = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = sans; textSize = tam * 0.92f; color = Tema.colorLetra.toArgb() }
@@ -209,12 +212,21 @@ private suspend fun pdf(ctx: Context, b: Borrador): File? {
         return h + marco * 2 + extra + 16f
     }
 
-    // las fotos pegadas
-    b.fotos.forEachIndexed { i, id ->
-        val bmp = Casa.foto(id, 1200) ?: return@forEachIndexed
+    /** Una foto sola, en su papel o a sangre, o diagramada con su texto al lado. */
+    suspend fun unaFoto(i: Int, id: String) {
+        val bmp = Casa.foto(id, 1200) ?: return
         val est = EstiloFoto.de(b.estilos[id])
         val pie = b.pies[id] ?: ""
-        if (!est.alLado) {
+        if (est.aSangre) {
+            // de borde a borde de la página
+            val w = anchoPag.toFloat()
+            val h = w * bmp.height / bmp.width.coerceAtLeast(1)
+            if (y + h + 20f > altoPag - margen) nuevaPagina()
+            lienzo!!.drawBitmap(bmp, null, RectF(0f, y, w, y + h), Paint(Paint.FILTER_BITMAP_FLAG))
+            y += h + 8f
+            if (pie.isNotBlank()) { dibujar(armar(pie.trim(), TextPaint(pPie).apply { color = p.texto2.toArgb() }, ancho, Layout.Alignment.ALIGN_CENTER, 1.1f)); y += 6f }
+            y += 6f
+        } else if (!est.alLado) {
             val w = ancho * est.ancho - 12f
             val h = w * bmp.height / bmp.width.coerceAtLeast(1)
             if (y + h + 40f > altoPag - margen) nuevaPagina()
@@ -254,22 +266,59 @@ private suspend fun pdf(ctx: Context, b: Borrador): File? {
         }
     }
 
-    // las voces pegadas: en papel no suenan, pero quedan nombradas
-    val voces = b.voces.mapNotNull { Casa.porId(it) }
-    if (voces.isNotEmpty()) {
-        y += 4f
-        val pVoz = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = mono; textSize = 7.5f; color = p.texto2.toArgb(); letterSpacing = 0.08f }
-        voces.forEach { v ->
-            val linea = "▶  " + (if (v.esRumor) "RUMOR" else "VOZ") + " · " + v.title.ifBlank { "sin nombre" } + " · " + duracion(v.dur)
-            dibujar(armar(linea, pVoz, ancho, espacio = 1.3f))
-            y += 4f
+    /** Un collage: las fotos en una tira de papel, del mismo alto. */
+    suspend fun collage(ids: List<String>) {
+        val bmps = ids.mapNotNull { Casa.foto(it, 900) }
+        if (bmps.isEmpty()) return
+        val marco = 6f; val hueco = 4f
+        val alto = (ancho - marco * 2) / (if (bmps.size >= 3) 2.1f else 1.55f)
+        if (y + alto + 40f > altoPag - margen) nuevaPagina()
+        val c = lienzo!!
+        val y0 = y + 8f
+        c.drawRect(RectF(margen + 1.5f, y0 - marco + 2.5f, margen + ancho + 1.5f, y0 + alto + marco + 2.5f), Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x22000000 })
+        c.drawRect(RectF(margen, y0 - marco, margen + ancho, y0 + alto + marco), Paint().apply { color = BordeFoto.toArgb() })
+        val wCelda = (ancho - marco * 2 - hueco * (bmps.size - 1)) / bmps.size
+        bmps.forEachIndexed { k, bm ->
+            val x = margen + marco + k * (wCelda + hueco)
+            // recortada al centro, como en la app
+            val r = wCelda / alto
+            val (sw, sh) = if (bm.width.toFloat() / bm.height > r) (bm.height * r) to bm.height.toFloat() else bm.width.toFloat() to (bm.width / r)
+            val sx = ((bm.width - sw) / 2).toInt(); val sy = ((bm.height - sh) / 2).toInt()
+            c.drawBitmap(bm, android.graphics.Rect(sx, sy, sx + sw.toInt(), sy + sh.toInt()), RectF(x, y0, x + wCelda, y0 + alto), Paint(Paint.FILTER_BITMAP_FLAG))
         }
+        c.drawRect(RectF(margen + ancho / 2 - 24f, y0 - marco - 5f, margen + ancho / 2 + 24f, y0 - marco + 7f), Paint().apply { color = CintaFoto.toArgb() })
+        y += alto + marco * 2 + 18f
+        val pie = b.pies[ids.first()] ?: ""
+        if (pie.isNotBlank()) { dibujar(armar(pie.trim(), pPie, ancho, Layout.Alignment.ALIGN_CENTER, 1.1f)); y += 8f }
     }
 
-    // el cuerpo, con su formato
-    if (b.texto.isNotBlank()) {
-        y += 6f
-        dibujar(armar(conFormato(b.texto, sansFuerte, serif, p.texto2.toArgb(), p.acento.toArgb(), tam, forma.capitular), pCuerpo, ancho, espacio = if (forma.poema) 1.8f else 1.5f))
+    val pVoz = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = mono; textSize = 7.5f; color = p.texto2.toArgb(); letterSpacing = 0.08f }
+    var nFoto = 0
+    var primerTexto = true
+    // la lámina en el orden en que se diagramó: párrafos, fotos, collages y voces
+    Marcas.partir(b.texto, b.fotos, b.voces).forEach { pz ->
+        when (pz.tipo) {
+            Pieza.FOTO -> unaFoto(nFoto++, pz.ids.first())
+            Pieza.FOTOS -> { nFoto++; collage(pz.ids) }
+            // las voces en papel no suenan, pero quedan nombradas
+            Pieza.VOZ -> Casa.porId(pz.ids.first())?.let { v ->
+                y += 4f
+                val linea = "▶  " + (if (v.esRumor) "RUMOR" else "VOZ") + " · " + v.title.ifBlank { "sin nombre" } + " · " + duracion(v.dur)
+                dibujar(armar(linea, pVoz, ancho, espacio = 1.3f))
+                y += 6f
+            }
+            else -> if (pz.texto.isNotBlank()) {
+                y += 6f
+                dibujar(armar(
+                    conFormato(pz.texto, sansFuerte, serif, p.texto2.toArgb(), p.acento.toArgb(), tam, forma.capitular && primerTexto),
+                    pCuerpo, ancho,
+                    espacio = (if (forma.poema) 1.8f else 1.5f) * forma.factorAire,
+                ))
+                primerTexto = false
+                y += 4f
+            }
+        }
+        Unit
     }
 
     // el sello del mar

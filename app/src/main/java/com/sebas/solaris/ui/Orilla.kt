@@ -92,8 +92,9 @@ fun Orilla() {
     // mientras se respira, todo lo demás se retira
     val retirada by androidx.compose.animation.core.animateFloatAsState(if (Oleaje.respirando) 0f else 1f, androidx.compose.animation.core.tween(1200), label = "retirada")
     Box(Modifier.fillMaxSize()) {
-        // el agua se oscurece al bajar
-        Box(Modifier.fillMaxSize().graphicsLayer { alpha = hondura * 0.84f }.background(Azules.Abismo))
+        // el agua se oscurece al bajar (la oscuridad es parte del mar, así el vidrio también la ve)
+        LaunchedEffect(Unit) { snapshotFlow { hondura }.collect { Vidrio.hondura = it } }
+        DisposableEffect(Unit) { onDispose { Vidrio.hondura = 0f } }
 
         LazyColumn(Modifier.fillMaxSize().graphicsLayer { alpha = retirada }, state = lista, contentPadding = PaddingValues(bottom = 150.dp)) {
             item(key = "superficie") { Superficie(Modifier.fillParentMaxHeight()) }
@@ -114,6 +115,19 @@ fun Orilla() {
                     if (r.esCinta) Nav.escuchando = r.id else Nav.abrirNota(r.id)
                 }
             }
+        }
+
+        // niebla en los bordes: los registros se disuelven arriba y abajo en vez de cortarse
+        val niebla = ((hondura - 0.5f) / 0.5f).coerceIn(0f, 1f)
+        if (niebla > 0.01f) {
+            Box(
+                Modifier.fillMaxWidth().statusBarsPadding().height(64.dp).graphicsLayer { alpha = niebla * retirada }
+                    .nieblaDeBorde(arriba = true)
+            )
+            Box(
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().height(150.dp)
+                    .graphicsLayer { alpha = niebla * retirada }.nieblaDeBorde(arriba = false)
+            )
         }
 
         // la profundidad, arriba, mientras uno está hondo
@@ -163,7 +177,7 @@ private fun Superficie(modifier: Modifier) {
                         color = Azules.Bruma,
                     )
                 }
-                Redondo(fondo = Color(0x330B2A40), alTocar = { Nav.ajustes = true }) { IconoPuntos(Azules.Crema) }
+                Redondo(fondo = Azules.Noche, vidrio = true, alTocar = { Nav.ajustes = true }) { IconoPuntos(Azules.Crema) }
             }
             Spacer(Modifier.height(44.dp))
             Text(a, color = Azules.Crema, fontFamily = Serif, fontSize = 46.sp, lineHeight = 48.sp)
@@ -229,7 +243,7 @@ private fun BotonUnico(modifier: Modifier) {
     val forma = RoundedCornerShape(50)
     Row(
         modifier.navigationBarsPadding().padding(bottom = 20.dp)
-            .clip(forma).background(Color(0x400B1620)).border(1.dp, Color(0x2EB9C6CC), forma)
+            .vidrio(forma, Azules.Hondo, 0.32f)
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -266,7 +280,7 @@ private fun Sonar(consulta: String, alCambiar: (String) -> Unit, cuantos: Int) {
         Spacer(Modifier.height(14.dp))
         val forma = RoundedCornerShape(18.dp)
         Row(
-            Modifier.fillMaxWidth().clip(forma).background(Color(0xB302070F)).border(1.dp, Color(0x1FB9C6CC), forma)
+            Modifier.fillMaxWidth().vidrio(forma, Azules.Abismo, 0.5f, filo = 0.7f)
                 .padding(horizontal = 16.dp, vertical = 13.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -302,18 +316,18 @@ private fun Tarjeta(r: Item, alTocar: () -> Unit) {
     }
     val titulo = when {
         r.esCinta -> r.title.ifBlank { "cinta sin nombre" }
-        else -> r.title.ifBlank { sinMarcas(r.text.lineSequence().firstOrNull { it.isNotBlank() } ?: "Fotos") }
+        else -> r.title.ifBlank { sinMarcas(com.sebas.solaris.Marcas.limpio(r.text).lineSequence().firstOrNull { it.isNotBlank() } ?: "Fotos") }
     }
     val sub = when {
         r.esRumor -> duracion(r.dur) + " · solo sonido"
         r.esCinta -> if (r.text.isNotBlank()) "“" + r.text.replace('\n', ' ').take(90) + "”" else duracion(r.dur) + " · sin transcribir"
-        r.title.isBlank() -> sinMarcas(r.text.lineSequence().filter { it.isNotBlank() }.drop(1).joinToString(" "))
-        else -> sinMarcas(r.text.replace('\n', ' '))
+        r.title.isBlank() -> sinMarcas(com.sebas.solaris.Marcas.limpio(r.text).lineSequence().filter { it.isNotBlank() }.drop(1).joinToString(" "))
+        else -> sinMarcas(com.sebas.solaris.Marcas.limpio(r.text).replace('\n', ' '))
     }
     Row(
         Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth()
-            .clip(forma).background(Color(0x990B1620)).border(1.dp, Color(0x1AB9C6CC), forma)
             .presionable { alTocar() }
+            .vidrio(forma, Azules.Hondo, 0.42f, filo = 0.8f)
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -372,5 +386,5 @@ fun hace(t: Long): String {
 
 private fun frase(e: Item): String {
     val t = if (e.esCinta) e.title + (if (e.text.isNotBlank()) ": " + e.text else "") else e.title.ifBlank { e.text }
-    return sinMarcas(t.replace('\n', ' ')).take(110).trim()
+    return sinMarcas(com.sebas.solaris.Marcas.limpio(t).replace('\n', ' ')).take(110).trim()
 }

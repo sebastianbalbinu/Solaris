@@ -99,8 +99,12 @@ fun PapelFoto(id: String, giro: Float, pie: String, modifier: Modifier = Modifie
  * Al lado: ocupa media columna y su texto la rodea; lo que no cabe junto a ella sigue debajo, a todo lo ancho.
  */
 @Composable
-fun FotoPegada(id: String, estilo: EstiloFoto, indice: Int, pie: String, lado: String, estiloTexto: TextStyle, alTocar: () -> Unit) {
+fun FotoPegada(id: String, estilo: EstiloFoto, indice: Int, pie: String, lado: String, estiloTexto: TextStyle, sangria: Dp = 24.dp, alTocar: () -> Unit) {
     val toque = Modifier.clickable(remember { MutableInteractionSource() }, null) { alTocar() }
+    if (estilo.aSangre) {
+        FotoASangre(id, pie, sangria, Modifier.padding(vertical = 10.dp).then(toque))
+        return
+    }
     if (estilo.alLado) {
         FotoDiagramada(id, estilo, pie, lado, estiloTexto, toque)
         return

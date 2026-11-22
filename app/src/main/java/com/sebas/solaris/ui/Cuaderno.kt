@@ -24,6 +24,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -75,13 +77,17 @@ fun Editor(b: Borrador) {
     var hojaInsertar by remember { mutableStateOf(false) }
     var hojaVoces by remember { mutableStateOf(false) }
     var fotoAbierta by remember { mutableStateOf<String?>(null) }
+    var diagramar by remember { mutableStateOf(false) }
     val ctxEditor = androidx.compose.ui.platform.LocalContext.current
     val enfoque = androidx.compose.ui.platform.LocalFocusManager.current
-    // la lámina entera se va grabando en una capa: así se puede compartir tal como se ve, de arriba abajo
+    // la lámina se graba en una capa solo cuando se va a compartir (grabarla siempre gastaba en cada cuadro)
     val capa = androidx.compose.ui.graphics.rememberGraphicsLayer()
     var compartiendo by remember { mutableStateOf(false) }
+    var capturar by remember { mutableStateOf(false) }
 
-    var cuerpo by remember(b) { mutableStateOf(TextFieldValue(b.texto)) }
+    // la nota como pila de bloques: párrafos, fotos, collages y voces
+    val bloques = remember(b) { mutableStateListOf<Bloque>() }
+    var activo by remember(b) { mutableStateOf<Bloque?>(null) }
     LaunchedEffect(b) {
         if (!b.cargado) {
             b.id?.let { Casa.porId(it) }?.let { e ->
@@ -89,8 +95,8 @@ fun Editor(b: Borrador) {
                 b.pies = e.pies; b.lados = e.lados; b.forma = e.forma; b.voces = e.voces; b.sello = e.sello
             }
             b.cargado = true
-            cuerpo = TextFieldValue(b.texto)
         }
+        bloques.reemplazar(bloquesDe(b))
         // una nota nueva queda sellada con el mar de este momento
         if (b.id == null && b.sello.isBlank()) b.sello = selloDelMar()
     }
@@ -102,61 +108,123 @@ fun Editor(b: Borrador) {
     val desplazamiento = rememberScrollState(b.desplazamiento)
     DisposableEffect(b) { onDispose { b.desplazamiento = desplazamiento.value } }
 
+    fun sincronizar() = volcar(b, bloques)
+    fun cambiar(bl: Bloque, v: TextFieldValue) { bl.valor = v; sincronizar() }
+    /** El párrafo donde está el cursor, o el último. */
+    fun destino(): Bloque = activo?.takeIf { it in bloques && it.esTexto } ?: bloques.lastOrNull { it.esTexto }
+        ?: Bloque(com.sebas.solaris.Pieza.TEXTO).also { bloques.add(it) }
+
+    /** Pone bloques nuevos donde está el cursor, partiendo el párrafo en dos. */
+    fun insertar(en: Bloque, nuevos: List<Bloque>) {
+        val i = bloques.indexOf(en).let { if (it < 0) bloques.size - 1 else it }
+        val t = en.valor.text
+        val c = en.valor.selection.start.coerceIn(0, t.length)
+        val antes = t.substring(0, c).trimEnd('\n')
+        val despues = t.substring(c).trimStart('\n')
+        en.valor = TextFieldValue(antes, androidx.compose.ui.text.TextRange(antes.length))
+        val resto = Bloque(com.sebas.solaris.Pieza.TEXTO, texto = despues)
+        bloques.addAll(i + 1, nuevos + resto)
+        bloques.reemplazar(ordenar(bloques.toList()))
+        activo = bloques.getOrNull(bloques.indexOf(nuevos.last()) + 1)
+        sincronizar()
+    }
+    fun quitarFoto(id: String) {
+        bloques.forEach { if (id in it.ids && it.esFoto) it.ids = it.ids - id }
+        bloques.reemplazar(ordenar(bloques.toList()))
+        sincronizar()
+    }
+    fun sacarDelCollage(id: String) {
+        val bl = bloques.firstOrNull { it.tipo == com.sebas.solaris.Pieza.FOTOS && id in it.ids } ?: return
+        bl.ids = bl.ids - id
+        val i = bloques.indexOf(bl)
+        bloques.add(i + 1, Bloque(com.sebas.solaris.Pieza.FOTO, listOf(id)))
+        bloques.reemplazar(ordenar(bloques.toList()))
+        sincronizar()
+    }
+
+    var dondeFoto by remember { mutableStateOf<Bloque?>(null) }
     val elegir = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(8)) { uris ->
         Casa.pausarCandado = false
         scope.launch {
+            val ids = mutableListOf<String>()
             for (u in uris) {
                 val id = Casa.agregarFoto(u)
-                if (id != null) { b.fotos = b.fotos + id; b.estilos = b.estilos + (id to com.sebas.solaris.EstiloFoto.nueva().texto()); b.fotosNuevas.add(id) }
+                if (id != null) { ids += id; b.estilos = b.estilos + (id to com.sebas.solaris.EstiloFoto.nueva().texto()); b.fotosNuevas.add(id) }
             }
+            if (ids.isEmpty()) return@launch
+            // dos o tres a la vez: un collage; una o muchas: cada una en su lugar
+            val nuevos = if (ids.size in 2..3) listOf(Bloque(com.sebas.solaris.Pieza.FOTOS, ids))
+            else ids.map { Bloque(com.sebas.solaris.Pieza.FOTO, listOf(it)) }
+            insertar(dondeFoto ?: destino(), nuevos)
         }
     }
     fun pedirFoto() {
+        dondeFoto = destino()
         Casa.pausarCandado = true
         elegir.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
     }
     fun guardarYSalir() {
+        sincronizar()
         if (b.vacio()) Casa.descartarNuevas(b) else Casa.guardarBorrador(b)
         Nav.borrador = null
     }
-    fun cambiar(v: TextFieldValue) { cuerpo = v; b.texto = v.text }
-    BackHandler(enabled = !hojaLetra && !hojaOpciones && !hojaInsertar && !hojaVoces && fotoAbierta == null) { guardarYSalir() }
+    fun salirDeDiagramar() {
+        bloques.reemplazar(ordenar(bloques.toList()))
+        sincronizar()
+        diagramar = false
+    }
+    BackHandler(enabled = !hojaLetra && !hojaOpciones && !hojaInsertar && !hojaVoces && fotoAbierta == null) {
+        if (diagramar) salirDeDiagramar() else guardarYSalir()
+    }
 
     val forma = com.sebas.solaris.Forma.de(b.forma)
     fun fijarForma(f: com.sebas.solaris.Forma) { b.forma = f.texto() }
 
-    // la lámina: arriba se ve el mar, y a través del papel se adivinan sus relámpagos
+    // la lámina: arriba se ve el mar, y a través del papel (con su grano) se adivinan sus relámpagos
     Box(Modifier.fillMaxSize()) {
         Box(
-            Modifier.fillMaxSize().background(
-                Tema.papelLamina.let { a ->
-                    Brush.verticalGradient(0f to Color.Transparent, 0.10f to p.fondo.copy(alpha = a * 0.45f), 0.28f to p.fondo.copy(alpha = a * 0.9f), 0.5f to p.fondo.copy(alpha = a), 1f to p.fondo.copy(alpha = (a * 1.02f).coerceAtMost(1f)))
-                }
-            )
+            Modifier.fillMaxSize().drawBehind {
+                val a = Tema.papelLamina
+                drawRect(Brush.verticalGradient(0f to Color.Transparent, 0.10f to p.fondo.copy(alpha = a * 0.45f), 0.28f to p.fondo.copy(alpha = a * 0.9f), 0.5f to p.fondo.copy(alpha = a), 1f to p.fondo.copy(alpha = (a * 1.02f).coerceAtMost(1f))))
+                drawRect(Vidrio.pincelGrano, alpha = if (Tema.esNoche) 0.35f else 0.7f)
+            }
         )
     Box(Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
         Column(Modifier.fillMaxSize()) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Redondo(alTocar = { guardarYSalir() }) { IconoAtras(p.texto) }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Redondo(vidrio = true, alTocar = { if (diagramar) salirDeDiagramar() else guardarYSalir() }) { IconoAtras(p.texto) }
                 Spacer(Modifier.weight(1f))
+                // diagramar: ver la pila de bloques y cambiarlos de lugar
+                Redondo(vidrio = !diagramar, fondo = if (diagramar) p.boton else null, alTocar = {
+                    if (diagramar) salirDeDiagramar() else {
+                        enfoque.clearFocus()
+                        sincronizar()
+                        bloques.reemplazar(ordenar(bloques.toList(), compacta = true))
+                        diagramar = true
+                    }
+                }) { IconoDiagramar(if (diagramar) p.botonTexto else p.texto) }
+                Spacer(Modifier.width(6.dp))
                 // izquierda o centrado, de un toque
-                Redondo(alTocar = { fijarForma(forma.copy(centro = !forma.centro, poema = if (forma.centro) false else forma.poema)) }) {
+                Redondo(vidrio = true, alTocar = { fijarForma(forma.copy(centro = !forma.centro, poema = if (forma.centro) false else forma.poema)) }) {
                     IconoAlinear(p.texto, forma.centrado)
                 }
-                Spacer(Modifier.width(8.dp))
-                Redondo(alTocar = { hojaLetra = true }) { Text("Aa", color = p.texto, fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 15.sp) }
-                Spacer(Modifier.width(8.dp))
-                BotonModo()
-                Spacer(Modifier.width(8.dp))
-                Redondo(alTocar = { hojaOpciones = true }) { IconoPuntos(p.texto) }
+                Spacer(Modifier.width(6.dp))
+                Redondo(vidrio = true, alTocar = { hojaLetra = true }) { Text("Aa", color = p.texto, fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 15.sp) }
+                Spacer(Modifier.width(6.dp))
+                BotonModo(vidrio = true)
+                Spacer(Modifier.width(6.dp))
+                Redondo(vidrio = true, alTocar = { hojaOpciones = true }) { IconoPuntos(p.texto) }
             }
+            val margen = forma.margenDp.dp
             Column(
-                Modifier.weight(1f).fillMaxWidth().verticalScroll(desplazamiento)
+                Modifier.weight(1f).fillMaxWidth().bordesQueSeDisuelven(arriba = 36.dp, abajo = 96.dp).verticalScroll(desplazamiento)
                     .drawWithContent {
-                        capa.record { this@drawWithContent.drawContent() }
-                        drawLayer(capa)
+                        if (capturar) {
+                            capa.record { this@drawWithContent.drawContent() }
+                            drawLayer(capa)
+                        } else drawContent()
                     }
-                    .padding(horizontal = 24.dp).padding(top = 96.dp, bottom = 120.dp),
+                    .padding(horizontal = margen).padding(top = 96.dp, bottom = 120.dp),
             ) {
                 val alinear = if (forma.centrado) TextAlign.Center else TextAlign.Start
                 Senal(
@@ -170,56 +238,82 @@ fun Editor(b: Borrador) {
                     TextStyle(color = p.texto, fontFamily = Serif, fontSize = 34.sp, lineHeight = 38.sp, textAlign = alinear),
                 )
                 val tam = Tema.tamanoLetra.toFloat() + if (forma.poema) 1f else 0f
+                val enSerif = forma.poema || forma.serif
                 val estilo = TextStyle(
                     color = Tema.colorLetra,
-                    fontFamily = if (forma.poema) Serif else Sans,
-                    fontSize = (if (forma.poema) tam * 1.12f else tam).sp,
-                    lineHeight = (tam * if (forma.poema) 1.95f else 1.62f).sp,
+                    fontFamily = if (enSerif) Serif else Sans,
+                    fontSize = (if (enSerif) tam * 1.12f else tam).sp,
+                    lineHeight = (tam * (if (forma.poema) 1.95f else if (forma.serif) 1.7f else 1.62f) * forma.factorAire).sp,
                     textAlign = alinear,
                 )
-                val estiloLado = TextStyle(color = Tema.colorLetra, fontFamily = Sans, fontSize = (tam * 0.92f).sp, lineHeight = (tam * 1.5f).sp)
-                // las fotos van pegadas a la lámina: cada una con su tamaño, su giro, su pie y, si va al lado, su texto
-                b.fotos.forEachIndexed { i, id ->
-                    Spacer(Modifier.height(if (i == 0) 22.dp else 14.dp))
-                    FotoPegada(id, com.sebas.solaris.EstiloFoto.de(b.estilos[id]), i, b.pies[id] ?: "", b.lados[id] ?: "", estiloLado) { fotoAbierta = id }
-                }
-                // las voces pegadas
-                if (b.voces.isNotEmpty()) {
-                    Spacer(Modifier.height(18.dp))
-                    val cintas = remember(b.voces, Casa.items) { b.voces.mapNotNull { Casa.porId(it) }.filter { !it.deleted } }
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        cintas.forEach { c ->
-                            CintaPegada(c, alQuitar = { b.voces = b.voces - c.id }) { Nav.escuchando = c.id }
+                val estiloLado = TextStyle(color = Tema.colorLetra, fontFamily = Sans, fontSize = (tam * 0.92f).sp, lineHeight = (tam * 1.5f * forma.factorAire).sp)
+                Spacer(Modifier.height(18.dp))
+
+                if (diagramar) {
+                    Diagramar(b, bloques, alAbrirFoto = { fotoAbierta = it }) { sincronizar() }
+                } else {
+                    val primerTexto = bloques.firstOrNull { it.esTexto }
+                    val ultimoTexto = bloques.lastOrNull { it.esTexto }
+                    val todoVacio = bloques.all { !it.esTexto || it.valor.text.isEmpty() }
+                    var nFoto = 0
+                    bloques.forEach { bl ->
+                        key(bl.clave) {
+                            when (bl.tipo) {
+                                com.sebas.solaris.Pieza.TEXTO -> {
+                                    val formatoTexto = remember(Tema.esNoche, tam, forma.capitular, bl === primerTexto, p) {
+                                        FormatoSencillo(p.texto2.copy(alpha = 0.45f), p.acento, p.texto2, tam, forma.capitular && bl === primerTexto)
+                                    }
+                                    val ultimo = bl === ultimoTexto
+                                    BasicTextField(
+                                        value = bl.valor,
+                                        onValueChange = { nuevo ->
+                                            if (nuevo.text != bl.valor.text) Ritmo.tecla(kotlin.math.abs(nuevo.text.length - bl.valor.text.length))
+                                            // en un poema el enter no arma listas
+                                            cambiar(bl, if (forma.poema) nuevo else continuarLista(bl.valor, nuevo))
+                                        },
+                                        textStyle = estilo,
+                                        cursorBrush = SolidColor(p.acento),
+                                        visualTransformation = formatoTexto,
+                                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                                        modifier = Modifier.fillMaxWidth()
+                                            .onFocusChanged { if (it.isFocused) activo = bl }
+                                            .defaultMinSize(minHeight = if (ultimo) 300.dp else 30.dp)
+                                            .padding(vertical = 4.dp),
+                                        decorationBox = { campo ->
+                                            Box {
+                                                if (ultimo && todoVacio) Text(
+                                                    if (forma.poema) "Escribe tu poema…" else "Escribe aquí…",
+                                                    style = estilo.copy(color = p.texto2.copy(alpha = 0.5f)),
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                )
+                                                campo()
+                                            }
+                                        },
+                                    )
+                                }
+                                com.sebas.solaris.Pieza.FOTO -> {
+                                    val id = bl.ids.first()
+                                    FotoPegada(id, com.sebas.solaris.EstiloFoto.de(b.estilos[id]), nFoto++, b.pies[id] ?: "", b.lados[id] ?: "", estiloLado, margen) { fotoAbierta = id }
+                                }
+                                com.sebas.solaris.Pieza.FOTOS -> {
+                                    nFoto++
+                                    val giro = com.sebas.solaris.EstiloFoto.de(b.estilos[bl.ids.first()]).giro * 0.4f
+                                    Collage(bl.ids, giro, b.pies[bl.ids.first()] ?: "") { fotoAbierta = it }
+                                }
+                                else -> {
+                                    val c = remember(bl.ids, Casa.items) { bl.ids.firstOrNull()?.let { Casa.porId(it) }?.takeIf { !it.deleted } }
+                                    if (c == null) Unit else Box(Modifier.padding(vertical = 8.dp)) {
+                                        CintaPegada(c, alQuitar = {
+                                            bloques.remove(bl)
+                                            bloques.reemplazar(ordenar(bloques.toList()))
+                                            sincronizar()
+                                        }) { Nav.escuchando = c.id }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
-                Spacer(Modifier.height(18.dp))
-                val formatoTexto = remember(Tema.esNoche, tam, forma.capitular) {
-                    FormatoSencillo(p.texto2.copy(alpha = 0.45f), p.acento, p.texto2, tam, forma.capitular)
-                }
-                BasicTextField(
-                    value = cuerpo,
-                    onValueChange = { nuevo ->
-                        if (nuevo.text != cuerpo.text) Ritmo.tecla(kotlin.math.abs(nuevo.text.length - cuerpo.text.length))
-                        // en un poema el enter no arma listas
-                        cambiar(if (forma.poema) nuevo else continuarLista(cuerpo, nuevo))
-                    },
-                    textStyle = estilo,
-                    cursorBrush = SolidColor(p.acento),
-                    visualTransformation = formatoTexto,
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                    modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 300.dp),
-                    decorationBox = { campo ->
-                        Box {
-                            if (cuerpo.text.isEmpty()) Text(
-                                if (forma.poema) "Escribe tu poema…" else "Escribe aquí…",
-                                style = estilo.copy(color = p.texto2.copy(alpha = 0.5f)),
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                            campo()
-                        }
-                    },
-                )
                 // el sello: cómo estaba el mar cuando se escribió
                 if (b.sello.isNotBlank()) {
                     Spacer(Modifier.height(28.dp))
@@ -241,33 +335,54 @@ fun Editor(b: Borrador) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                Modifier.height(50.dp).clip(CircleShape).background(p.superficie).padding(horizontal = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                BotonFormato({ Text("B", color = p.texto, fontFamily = Sans, fontWeight = FontWeight.SemiBold, fontSize = 17.sp) }) { cambiar(conNegrita(cuerpo)) }
-                BotonFormato({ IconoTachado(p.texto) }) { cambiar(conTachado(cuerpo)) }
-                BotonFormato({ Text("•", color = p.texto, fontFamily = Sans, fontSize = 22.sp) }) { cambiar(alternarPrefijo(cuerpo, "- ")) }
-                BotonFormato({ Text("❝", color = p.texto, fontFamily = Sans, fontSize = 18.sp) }) { cambiar(alternarPrefijo(cuerpo, "> ")) }
-                BotonFormato({ IconoMas(p.texto, 17.dp) }) { hojaInsertar = true }
+            if (diagramar) {
+                Pildora("Listo, así queda", icono = { IconoDiagramar(p.botonTexto, 18.dp) }) { salirDeDiagramar() }
+            } else {
+                Row(
+                    Modifier.height(50.dp).vidrio(CircleShape, p.superficie, if (Tema.esNoche) 0.7f else 0.88f).padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    BotonFormato({ Text("B", color = p.texto, fontFamily = Sans, fontWeight = FontWeight.SemiBold, fontSize = 17.sp) }) { destino().let { cambiar(it, conNegrita(it.valor)) } }
+                    BotonFormato({ IconoTachado(p.texto) }) { destino().let { cambiar(it, conTachado(it.valor)) } }
+                    BotonFormato({ Text("•", color = p.texto, fontFamily = Sans, fontSize = 22.sp) }) { destino().let { cambiar(it, alternarPrefijo(it.valor, "- ")) } }
+                    BotonFormato({ Text("❝", color = p.texto, fontFamily = Sans, fontSize = 18.sp) }) { destino().let { cambiar(it, alternarPrefijo(it.valor, "> ")) } }
+                    BotonFormato({ IconoMas(p.texto, 17.dp) }) { hojaInsertar = true }
+                }
+                Pildora("Listo") { guardarYSalir() }
             }
-            Pildora("Listo") { guardarYSalir() }
         }
 
         val abierta = fotoAbierta
-        if (abierta != null) VisorFoto(b, abierta) { fotoAbierta = null }
+        if (abierta != null) {
+            val enCollage = bloques.any { it.tipo == com.sebas.solaris.Pieza.FOTOS && abierta in it.ids }
+            VisorFoto(
+                b, abierta, enCollage,
+                alQuitar = { quitarFoto(abierta) },
+                alSacar = { sacarDelCollage(abierta) },
+            ) { fotoAbierta = null }
+        }
 
         HojaLetra(hojaLetra, b) { hojaLetra = false }
         HojaInsertar(hojaInsertar, alElegir = { que ->
             hojaInsertar = false
             when (que) {
-                "cita" -> cambiar(alternarPrefijo(cuerpo, "» "))
-                "ola" -> cambiar(insertarLinea(cuerpo, "~~~"))
-                "voz" -> hojaVoces = true
+                "cita" -> destino().let { cambiar(it, alternarPrefijo(it.valor, "» ")) }
+                "ola" -> destino().let { cambiar(it, insertarLinea(it.valor, "~~~")) }
+                "voz" -> { dondeFoto = destino(); hojaVoces = true }
                 "foto" -> pedirFoto()
             }
         }) { hojaInsertar = false }
-        HojaVoces(hojaVoces, b.voces, alAlternar = { id -> b.voces = if (id in b.voces) b.voces - id else b.voces + id }) { hojaVoces = false }
+        HojaVoces(hojaVoces, b.voces, alAlternar = { id ->
+            if (id in b.voces) {
+                bloques.removeAll { it.tipo == com.sebas.solaris.Pieza.VOZ && id in it.ids }
+                bloques.reemplazar(ordenar(bloques.toList()))
+                sincronizar()
+            } else {
+                val donde = dondeFoto?.takeIf { it in bloques } ?: destino()
+                insertar(donde, listOf(Bloque(com.sebas.solaris.Pieza.VOZ, listOf(id))))
+                dondeFoto = activo
+            }
+        }) { hojaVoces = false }
 
         Hoja(hojaOpciones, { hojaOpciones = false }) {
             Text("Esta nota", color = p.texto, fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 17.sp)
@@ -276,8 +391,9 @@ fun Editor(b: Borrador) {
                 compartiendo = true
                 enfoque.clearFocus()
                 scope.launch {
-                    // un par de cuadros para que se vaya el cursor y la hoja se cierre antes de fotografiar
+                    // un par de cuadros para que se vaya el cursor, la hoja se cierre y la capa se grabe
                     hojaOpciones = false
+                    capturar = true
                     delay(450)
                     try {
                         val img = capa.toImageBitmap()
@@ -285,12 +401,14 @@ fun Editor(b: Borrador) {
                     } catch (e: Throwable) {
                         android.widget.Toast.makeText(ctxEditor, "La lámina es muy larga para una sola imagen. Prueba con PDF.", android.widget.Toast.LENGTH_LONG).show()
                     }
+                    capturar = false
                     compartiendo = false
                 }
             }
             Parrafo("Tal como la ves: tu diagramación, tus fotos y el mar de este momento detrás.")
             Pildora("Compartir como PDF", Modifier.fillMaxWidth(), primaria = false) {
                 hojaOpciones = false
+                sincronizar()
                 scope.launch { compartirPdf(ctxEditor, b) }
             }
             if (b.id != null) Parrafo("Borrarla la quita de este celular y de la nube, para siempre.")
@@ -304,9 +422,9 @@ fun Editor(b: Borrador) {
     }
 }
 
-/** La foto abierta: cómo va pegada (sola o al lado del texto), su tamaño, su giro, su pie y su texto al lado. */
+/** La foto abierta: cómo va pegada (sola, al lado del texto o a sangre), su tamaño, su giro, su pie y su texto al lado. */
 @Composable
-private fun VisorFoto(b: Borrador, id: String, alCerrar: () -> Unit) {
+private fun VisorFoto(b: Borrador, id: String, enCollage: Boolean, alQuitar: () -> Unit, alSacar: () -> Unit, alCerrar: () -> Unit) {
     BackHandler { alCerrar() }
     val est = com.sebas.solaris.EstiloFoto.de(b.estilos[id])
     fun fijar(e: com.sebas.solaris.EstiloFoto) { b.estilos = b.estilos + (id to e.texto()); com.sebas.solaris.Sonidos.tic() }
@@ -317,24 +435,29 @@ private fun VisorFoto(b: Borrador, id: String, alCerrar: () -> Unit) {
         Foto(id, Modifier.weight(1f).fillMaxWidth().clickable { alCerrar() }, lado = 1600, recortar = false)
         Spacer(Modifier.height(12.dp))
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Segmento(listOf("Sola", "Texto a la der.", "Texto a la izq."), when (est.pos) { com.sebas.solaris.EstiloFoto.IZQUIERDA -> 1; com.sebas.solaris.EstiloFoto.DERECHA -> 2; else -> 0 }) { i ->
-                fijar(est.copy(pos = when (i) { 1 -> com.sebas.solaris.EstiloFoto.IZQUIERDA; 2 -> com.sebas.solaris.EstiloFoto.DERECHA; else -> com.sebas.solaris.EstiloFoto.SOLA }))
-            }
-            if (!est.alLado) Segmento(listOf("Pequeña", "Mediana", "Grande"), est.tam) { t -> fijar(est.copy(tam = t)) }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("↺  Girar" to -2f, "Recta" to 0f, "Girar  ↻" to 2f).forEach { (nombre, paso) ->
-                    Text(
-                        nombre, color = Color.White, fontFamily = Sans, fontSize = 14.sp, textAlign = TextAlign.Center,
-                        modifier = Modifier.weight(1f).clip(CircleShape).background(Color(0x26FFFFFF))
-                            .clickable { fijar(est.copy(giro = if (paso == 0f) 0f else (est.giro + paso).coerceIn(-10f, 10f))) }
-                            .padding(vertical = 10.dp),
-                    )
+            if (enCollage) {
+                Parrafo("Esta foto va en un collage. Puedes sacarla para que vaya sola.", color = Color(0xB3EDE3CF))
+                Pildora("Sacar del collage", Modifier.fillMaxWidth(), primaria = false) { alSacar(); alCerrar() }
+            } else {
+                Segmento(listOf("Sola", "Texto a la der.", "Texto a la izq."), when (est.pos) { com.sebas.solaris.EstiloFoto.IZQUIERDA -> 1; com.sebas.solaris.EstiloFoto.DERECHA -> 2; else -> 0 }) { i ->
+                    fijar(est.copy(pos = when (i) { 1 -> com.sebas.solaris.EstiloFoto.IZQUIERDA; 2 -> com.sebas.solaris.EstiloFoto.DERECHA; else -> com.sebas.solaris.EstiloFoto.SOLA }, tam = if (i != 0 && est.tam == 3) 1 else est.tam))
+                }
+                if (!est.alLado) Segmento(listOf("Pequeña", "Mediana", "Grande", "A sangre"), est.tam) { t -> fijar(est.copy(tam = t)) }
+                if (!est.aSangre) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("↺  Girar" to -2f, "Recta" to 0f, "Girar  ↻" to 2f).forEach { (nombre, paso) ->
+                        Text(
+                            nombre, color = Color.White, fontFamily = Sans, fontSize = 14.sp, textAlign = TextAlign.Center,
+                            modifier = Modifier.weight(1f).clip(CircleShape).background(Color(0x26FFFFFF))
+                                .clickable { fijar(est.copy(giro = if (paso == 0f) 0f else (est.giro + paso).coerceIn(-10f, 10f))) }
+                                .padding(vertical = 10.dp),
+                        )
+                    }
                 }
             }
             CampoOscuro(b.pies[id] ?: "", { b.pies = b.pies + (id to it) }, "Pie de foto (opcional)", unaLinea = true)
-            if (est.alLado) CampoOscuro(b.lados[id] ?: "", { b.lados = b.lados + (id to it) }, "Lo que va al lado de la foto…", unaLinea = false)
+            if (est.alLado && !enCollage) CampoOscuro(b.lados[id] ?: "", { b.lados = b.lados + (id to it) }, "Lo que va al lado de la foto…", unaLinea = false)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Pildora("Quitar de la nota", Modifier.weight(1f), primaria = false) { b.fotos = b.fotos - id; alCerrar() }
+                Pildora("Quitar de la nota", Modifier.weight(1f), primaria = false) { alQuitar(); alCerrar() }
                 Pildora("Listo", Modifier.weight(1f), fondo = claro, tinta = Color(0xFF0E1B26)) { alCerrar() }
             }
         }
@@ -409,6 +532,14 @@ fun HojaLetra(visible: Boolean, nota: Borrador? = null, alCerrar: () -> Unit) {
             Interruptor("Letra capitular", "La primera letra, grande, como en los libros.", f.capitular) {
                 nota.forma = f.copy(capitular = it).texto()
             }
+            Interruptor("Cuerpo en serif", "Todo el texto con la letra de los títulos, como un libro.", f.serif) {
+                nota.forma = f.copy(serif = it).texto()
+            }
+            Text("Aire entre renglones", color = p.texto2, fontFamily = Sans, fontSize = 13.sp)
+            SegmentoTema(listOf("Junto", "Normal", "Amplio"), f.aire) { nota.forma = f.copy(aire = it).texto() }
+            Text("Márgenes", color = p.texto2, fontFamily = Sans, fontSize = 13.sp)
+            SegmentoTema(listOf("Estrechos", "Normales", "Anchos"), f.margen) { nota.forma = f.copy(margen = it).texto() }
+            Parrafo("Para mover fotos, voces y párrafos de lugar, toca el botón de diagramar arriba.")
             Box(Modifier.fillMaxWidth().height(1.dp).background(p.linea))
         }
         Text("Letra", color = p.texto, fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 17.sp)
@@ -552,4 +683,21 @@ private fun BotonFormato(contenido: @Composable () -> Unit, alTocar: () -> Unit)
         Modifier.size(42.dp).clip(CircleShape).clickable { com.sebas.solaris.Sonidos.tic(); alTocar() },
         contentAlignment = Alignment.Center,
     ) { contenido() }
+}
+
+/** Un selector de pocas opciones con los colores del papel. */
+@Composable
+private fun SegmentoTema(opciones: List<String>, elegido: Int, alElegir: (Int) -> Unit) {
+    val p = Tema.p
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(p.superficie).padding(4.dp)) {
+        opciones.forEachIndexed { i, nombre ->
+            val sel = i == elegido
+            Box(
+                Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(11.dp))
+                    .background(if (sel) p.seleccion else Color.Transparent)
+                    .clickable { com.sebas.solaris.Sonidos.tic(); alElegir(i) },
+                contentAlignment = Alignment.Center,
+            ) { Text(nombre, color = if (sel) p.texto else p.texto2, fontFamily = Sans, fontSize = 14.sp) }
+        }
+    }
 }

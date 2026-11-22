@@ -105,14 +105,36 @@ data class Item(
 }
 
 /** Cómo va la lámina entera: alineación, modo poema y letra capitular. */
-data class Forma(val centro: Boolean = false, val poema: Boolean = false, val capitular: Boolean = false) {
-    fun texto() = listOfNotNull("centro".takeIf { centro }, "poema".takeIf { poema }, "capitular".takeIf { capitular }).joinToString(",")
+data class Forma(
+    val centro: Boolean = false,
+    val poema: Boolean = false,
+    val capitular: Boolean = false,
+    /** Aire entre renglones: 0 junto, 1 normal, 2 amplio. */
+    val aire: Int = 1,
+    /** Márgenes de la página: 0 estrechos, 1 normales, 2 anchos. */
+    val margen: Int = 1,
+    /** El cuerpo en serif, como un libro, aunque no sea poema. */
+    val serif: Boolean = false,
+) {
+    fun texto() = listOfNotNull(
+        "centro".takeIf { centro }, "poema".takeIf { poema }, "capitular".takeIf { capitular },
+        "aire$aire".takeIf { aire != 1 }, "margen$margen".takeIf { margen != 1 }, "serif".takeIf { serif },
+    ).joinToString(",")
     /** El poema siempre va centrado. */
     val centrado: Boolean get() = centro || poema
+    /** Cuánto se multiplica el interlineado. */
+    val factorAire: Float get() = when (aire) { 0 -> 0.86f; 2 -> 1.22f; else -> 1f }
+    /** Margen a cada lado, en dp. */
+    val margenDp: Int get() = when (margen) { 0 -> 16; 2 -> 40; else -> 24 }
     companion object {
         fun de(s: String?): Forma {
             val f = s?.split(",")?.map { it.trim() }?.toSet() ?: emptySet()
-            return Forma("centro" in f, "poema" in f, "capitular" in f)
+            return Forma(
+                "centro" in f, "poema" in f, "capitular" in f,
+                aire = when { "aire0" in f -> 0; "aire2" in f -> 2; else -> 1 },
+                margen = when { "margen0" in f -> 0; "margen2" in f -> 2; else -> 1 },
+                serif = "serif" in f,
+            )
         }
     }
 }
@@ -122,13 +144,15 @@ data class EstiloFoto(val tam: Int, val giro: Float, val pos: Int = SOLA) {
     fun texto() = "$tam," + String.format(java.util.Locale.US, "%.1f", giro) + ",$pos"
     /** Va al lado del texto, como en una revista. */
     val alLado: Boolean get() = pos != SOLA
-    val ancho: Float get() = when (tam) { 0 -> 0.48f; 2 -> 1f; else -> 0.7f }
+    val ancho: Float get() = when (tam) { 0 -> 0.48f; 2, 3 -> 1f; else -> 0.7f }
+    /** A sangre: de borde a borde de la pantalla, sin papel ni cinta, como una foto de revista. */
+    val aSangre: Boolean get() = tam == 3 && !alLado
 
     companion object {
         fun de(s: String?): EstiloFoto {
             val p = s?.split(",") ?: return EstiloFoto(1, 0f)
             return EstiloFoto(
-                p.getOrNull(0)?.toIntOrNull()?.coerceIn(0, 2) ?: 1,
+                p.getOrNull(0)?.toIntOrNull()?.coerceIn(0, 3) ?: 1,
                 p.getOrNull(1)?.toFloatOrNull()?.coerceIn(-10f, 10f) ?: 0f,
                 p.getOrNull(2)?.toIntOrNull()?.coerceIn(0, 2) ?: SOLA,
             )

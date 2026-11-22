@@ -39,7 +39,10 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8 optimiza Compose y las librerías: la app arranca y se desliza más suelta
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("logia")
         }
         debug {
@@ -65,7 +68,7 @@ android {
 }
 
 dependencies {
-    implementation(platform("androidx.compose:compose-bom:2024.09.00"))
+    implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
@@ -76,7 +79,8 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("androidx.documentfile:documentfile:1.0.1")
-    implementation("dev.chrisbanes.haze:haze:0.7.3")
+    implementation("dev.chrisbanes.haze:haze:1.1.1")
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")

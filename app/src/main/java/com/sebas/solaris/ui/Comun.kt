@@ -76,9 +76,11 @@ fun Pildora(
 
 /** Botón redondo con un ícono. */
 @Composable
-fun Redondo(modifier: Modifier = Modifier, tam: Dp = 44.dp, fondo: Color? = null, alTocar: () -> Unit, contenido: @Composable () -> Unit) {
+fun Redondo(modifier: Modifier = Modifier, tam: Dp = 44.dp, fondo: Color? = null, vidrio: Boolean = false, alTocar: () -> Unit, contenido: @Composable () -> Unit) {
+    val base = modifier.presionable { Sonidos.tic(); alTocar() }.size(tam)
     Box(
-        modifier.presionable { Sonidos.tic(); alTocar() }.size(tam).clip(CircleShape).background(fondo ?: Tema.p.superficie),
+        if (vidrio) base.vidrio(CircleShape, fondo ?: Tema.p.superficie, if (fondo == null) 0.62f else 0.38f)
+        else base.clip(CircleShape).background(fondo ?: Tema.p.superficie),
         contentAlignment = Alignment.Center,
     ) { contenido() }
 }
@@ -143,22 +145,24 @@ fun Campo(
 @Composable
 fun Hoja(visible: Boolean, alCerrar: () -> Unit, contenido: @Composable ColumnScope.() -> Unit) {
     if (visible) BackHandler { alCerrar() }
-    AnimatedVisibility(visible, enter = fadeIn(), exit = fadeOut()) {
+    AnimatedVisibility(visible, enter = fadeIn(tween(280)), exit = fadeOut(tween(320))) {
         Box(
-            Modifier.fillMaxSize().background(Color(0x99000000))
+            Modifier.fillMaxSize().background(Color(0x7302070F))
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { alCerrar() }
         )
     }
     AnimatedVisibility(
         visible,
         enter = slideInVertically(spring(dampingRatio = 0.86f, stiffness = 380f)) { it },
-        exit = slideOutVertically(tween(220)) { it },
+        exit = slideOutVertically(spring(dampingRatio = 1f, stiffness = 520f)) { it },
     ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
             Column(
                 Modifier.fillMaxWidth()
-                    .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
-                    .background(Tema.p.hoja)
+                    .vidrio(
+                        RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp), Tema.p.hoja,
+                        if (Tema.esNoche) 0.74f else 0.9f, radio = 30.dp,
+                    )
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
                     .padding(horizontal = 24.dp, vertical = 14.dp)
                     .navigationBarsPadding()
@@ -310,9 +314,9 @@ fun IconoHuella(color: Color, tam: Dp = 28.dp) {
 
 /** El botón de día/noche: sol de día, luna de noche. */
 @Composable
-fun BotonModo(modifier: Modifier = Modifier) {
+fun BotonModo(modifier: Modifier = Modifier, vidrio: Boolean = false) {
     val p = Tema.p
-    Redondo(modifier, alTocar = { Tema.alternar() }) {
+    Redondo(modifier, vidrio = vidrio, alTocar = { Tema.alternar() }) {
         if (Tema.esNoche) IconoLuna(p.texto) else IconoSol(p.texto)
     }
 }

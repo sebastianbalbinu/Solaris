@@ -3,6 +3,8 @@
 Una estación sobre el océano para guardar lo que piensas, sueñas y dices.
 
 - **Cuaderno:** notas editoriales con fotos, **negrita**, listas y citas. Día en papel crema, noche en negro absoluto (OLED).
+  Cada nota es una pila de bloques (párrafos, fotos, collages, voces) que se reordenan en «diagramar»; fotos a sangre, aire, márgenes y serif por nota.
+- **Vidrio:** todo lo que flota sobre el mar lo deja ver desenfocado (Android 12 o más nuevo).
 - **Cinta:** grabadora de casete en WAV 48 kHz, que sigue grabando con la pantalla apagada y transcribe la voz con Whisper.
 - **Océano:** el mar del Paso de Drake en pixel art, con datos reales de Open-Meteo, y una terminal para buscar todo.
 

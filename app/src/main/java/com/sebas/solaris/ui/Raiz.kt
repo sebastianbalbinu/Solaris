@@ -11,10 +11,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
 import androidx.compose.ui.graphics.graphicsLayer
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.haze
-import dev.chrisbanes.haze.hazeChild
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -102,7 +99,14 @@ fun Solaris(act: MainActivity) {
         // un solo mar, debajo de todo: la entrada y la orilla son el mismo; sigue vivo mientras uno escribe (escribir lo mueve)
         if (enCasa) {
             val enSuperficie = Nav.listaOrilla.firstVisibleItemIndex == 0
-            MarCianotipo(Modifier.fillMaxSize(), vivo = !Casa.abierta || Nav.borrador != null || (!encima && enSuperficie))
+            val marVivo = !Casa.abierta || Nav.borrador != null || (!encima && enSuperficie)
+            DisposableEffect(Unit) { Vidrio.activo = true; onDispose { Vidrio.activo = false } }
+            // el mar es lo único que se ve a través del vidrio: con su bruma y la oscuridad de lo hondo
+            Box(Modifier.fillMaxSize().haze(Vidrio.estado)) {
+                MarCianotipo(Modifier.fillMaxSize(), vivo = marVivo)
+                Bruma(viva = marVivo)
+                Box(Modifier.fillMaxSize().graphicsLayer { alpha = Vidrio.hondura * Vidrio.presencia * 0.84f }.background(Azules.Abismo))
+            }
             // los velos de la llegada no desaparecen de golpe al abrir: se retiran despacio, como la marea
             val velo by animateFloatAsState(
                 if (Casa.abierta) 0f else 1f,
@@ -120,7 +124,9 @@ fun Solaris(act: MainActivity) {
                 targetState = Casa.abierta,
                 transitionSpec = { fadeIn(tween(1100, delayMillis = 150)) togetherWith fadeOut(tween(900)) },
                 label = "llegada",
-            ) { abierta -> if (abierta) Interior() else Entrada(act) }
+            ) { abierta ->
+                Box(Modifier.fillMaxSize().enfoqueAlEntrar(transition, 24.dp)) { if (abierta) Interior() else Entrada(act) }
+            }
         }
         // escribiendo, el papel tapa el cielo, pero la luz de los relámpagos pasa a través de él
         if (enCasa && Nav.borrador != null) {
@@ -211,7 +217,7 @@ fun Entrada(act: MainActivity) {
                     if (conHuella) {
                         Box(
                             Modifier.presionable { Sonidos.tic(); Huella.pedir(act) { Casa.abrirAlFondo() } }
-                                .graphicsLayer { alpha = alfa }.size(72.dp).clip(CircleShape).background(Color(0x33B9C6CC)),
+                                .graphicsLayer { alpha = alfa }.size(72.dp).vidrio(CircleShape, Azules.Noche, 0.3f),
                             contentAlignment = Alignment.Center,
                         ) { IconoHuella(Azules.Crema) }
                         Spacer(Modifier.height(10.dp))
@@ -315,6 +321,7 @@ fun Interior() {
     // mientras algo está encima (escribir, ajustes), la orilla se retira: solo queda el mar
     val encima = Nav.borrador != null || Nav.ajustes || Nav.cambiarPin
     val orilla by animateFloatAsState(if (encima) 0f else 1f, tween(if (encima) 220 else 500), label = "orilla")
+    LaunchedEffect(Unit) { snapshotFlow { orilla }.collect { Vidrio.presencia = it } }
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = orilla }) { if (orilla > 0.01f) Orilla() }
         Encima(Nav.borrador != null) { ultimoBorrador?.let { Editor(it) } }
@@ -330,7 +337,8 @@ fun Interior() {
 private fun Encima(visible: Boolean, contenido: @Composable () -> Unit) {
     AnimatedVisibility(
         visible,
-        enter = slideInVertically(spring(dampingRatio = 0.86f, stiffness = 300f)) { it / 4 } + fadeIn(tween(320)),
-        exit = slideOutVertically(tween(300)) { it / 4 } + fadeOut(tween(260)),
-    ) { contenido() }
+        enter = slideInVertically(spring(dampingRatio = 0.86f, stiffness = 300f)) { it / 5 } + fadeIn(tween(320)) +
+            scaleIn(spring(dampingRatio = 0.9f, stiffness = 300f), initialScale = 0.97f),
+        exit = slideOutVertically(spring(dampingRatio = 1f, stiffness = 420f)) { it / 5 } + fadeOut(tween(240)),
+    ) { Box(Modifier.fillMaxSize().enfoqueAlEntrar(transition)) { contenido() } }
 }

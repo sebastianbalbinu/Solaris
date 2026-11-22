@@ -99,7 +99,7 @@ fun sinMarcas(t: String): String =
             l.trim() == "~~~" -> "·"
             else -> l
         }
-    }.replace("**", "").replace("~~", "").trim()
+    }.replace("**", "").replace("~~", "").replace(Regex("⟦[^⟧]*⟧"), "").trim()
 
 fun conNegrita(v: TextFieldValue): TextFieldValue = conMarca(v, "**")
 fun conTachado(v: TextFieldValue): TextFieldValue = conMarca(v, "~~")
