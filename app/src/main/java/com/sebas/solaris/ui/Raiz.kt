@@ -3,6 +3,7 @@
 package com.sebas.solaris.ui
 
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.animation.core.animateFloat
 
 import android.graphics.Bitmap
 import androidx.compose.animation.AnimatedVisibility
