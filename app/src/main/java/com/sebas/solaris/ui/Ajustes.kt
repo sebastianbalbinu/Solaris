@@ -1,11 +1,5 @@
 package com.sebas.solaris.ui
 
-import androidx.compose.foundation.border
-
-import androidx.compose.ui.graphics.Brush
-
-import androidx.compose.ui.draw.drawBehind
-
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -56,12 +50,7 @@ fun Ajustes() {
     }
     BackHandler(enabled = !salir && !letra && !editandoBoya && notion == null) { Nav.ajustes = false }
 
-    // Ajustes es una lámina más de la estación: el mismo papel con grano que las notas, con el mar asomando arriba
-    Box(Modifier.fillMaxSize().drawBehind {
-        val a = Tema.papelLamina.coerceAtLeast(0.86f)
-        drawRect(Brush.verticalGradient(0f to p.fondo.copy(alpha = a * 0.55f), 0.12f to p.fondo.copy(alpha = a * 0.94f), 0.3f to p.fondo.copy(alpha = a), 1f to p.fondo.copy(alpha = 1f)))
-        drawRect(Vidrio.pincelGrano, alpha = if (Tema.esNoche) 0.3f else 0.6f)
-    }.systemBarsPadding()) {
+    Box(Modifier.fillMaxSize().background(p.fondo).systemBarsPadding()) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -69,7 +58,7 @@ fun Ajustes() {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Redondo(alTocar = { Nav.ajustes = false }) { IconoAtras(p.texto) }
                 Spacer(Modifier.width(14.dp))
-                TituloSerif("Ajustes", tam = 36)
+                TituloSerif("Ajustes", tam = 34)
             }
             Spacer(Modifier.height(10.dp))
 
@@ -99,7 +88,17 @@ fun Ajustes() {
                 if (prog == null) FilaAccion("Bajar los mares vecinos ahora, aunque no haya Wi-Fi") {
                     com.sebas.solaris.Paquete.descargar(Corriente.visible, Corriente.objetivo, ahora = true)
                 }
-                FilaLlave("Cámara quieta", "Sin el cabeceo ni el balanceo del barco", Balanceo.quieta) { Balanceo.fijarQuieta(it); Sonidos.tic() }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Cámara quieta", color = p.texto, fontFamily = Sans, fontSize = 16.sp)
+                        Text("Sin el cabeceo ni el balanceo del barco", color = p.texto2, fontFamily = Sans, fontSize = 13.sp)
+                    }
+                    Switch(
+                        checked = Balanceo.quieta,
+                        onCheckedChange = { Balanceo.fijarQuieta(it); Sonidos.tic() },
+                        colors = SwitchDefaults.colors(checkedTrackColor = Azules.Cianotipo, checkedThumbColor = Color.White),
+                    )
+                }
             }
             GrupoBoyas { b -> boya = b; editandoBoya = true }
             GrupoNotion { paginas, archivos -> notion = paginas to archivos }
@@ -110,14 +109,51 @@ fun Ajustes() {
             Grupo("Tacto y sonido") {
                 var sonido by remember { mutableStateOf(Sonidos.conSonido) }
                 var vibra by remember { mutableStateOf(Sonidos.conVibracion) }
-                FilaLlave("Clics de los botones", "Suenan con el volumen de medios", sonido) { sonido = it; Sonidos.conSonido = it; Sonidos.tic() }
-                FilaLlave("Vibración", "Botones, respiración y cada rayo con su trueno", vibra) { vibra = it; Sonidos.conVibracion = it; Sonidos.tecla() }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Clics de los botones", color = p.texto, fontFamily = Sans, fontSize = 16.sp)
+                        Text("Suenan con el volumen de medios", color = p.texto2, fontFamily = Sans, fontSize = 13.sp)
+                    }
+                    Switch(
+                        checked = sonido,
+                        onCheckedChange = { sonido = it; Sonidos.conSonido = it; Sonidos.tic() },
+                        colors = SwitchDefaults.colors(checkedTrackColor = Azules.Cianotipo, checkedThumbColor = Color.White),
+                    )
+                }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Vibración", color = p.texto, fontFamily = Sans, fontSize = 16.sp)
+                        Text("Botones, respiración y cada rayo con su trueno", color = p.texto2, fontFamily = Sans, fontSize = 13.sp)
+                    }
+                    Switch(
+                        checked = vibra,
+                        onCheckedChange = { vibra = it; Sonidos.conVibracion = it; Sonidos.tecla() },
+                        colors = SwitchDefaults.colors(checkedTrackColor = Azules.Cianotipo, checkedThumbColor = Color.White),
+                    )
+                }
             }
             Grupo("Entrada") {
                 if (hayHuella) {
-                    FilaLlave("Entrar con huella", null, huella) { huella = it; Casa.usarHuella(it); Sonidos.tic() }
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Entrar con huella", color = p.texto, fontFamily = Sans, fontSize = 16.sp, modifier = Modifier.weight(1f))
+                        Switch(
+                            checked = huella,
+                            onCheckedChange = { huella = it; Casa.usarHuella(it); Sonidos.tic() },
+                            colors = SwitchDefaults.colors(checkedTrackColor = Azules.Cianotipo, checkedThumbColor = Color.White),
+                        )
+                    }
                 }
-                FilaLlave("Proteger la pantalla", "Bloquea las capturas y oculta la estación en apps recientes", Tema.protegerPantalla) { Tema.fijarProteger(it); Sonidos.tic() }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Proteger la pantalla", color = p.texto, fontFamily = Sans, fontSize = 16.sp)
+                        Text("Bloquea las capturas y oculta la estación en apps recientes", color = p.texto2, fontFamily = Sans, fontSize = 13.sp)
+                    }
+                    Switch(
+                        checked = Tema.protegerPantalla,
+                        onCheckedChange = { Tema.fijarProteger(it); Sonidos.tic() },
+                        colors = SwitchDefaults.colors(checkedTrackColor = Azules.Cianotipo, checkedThumbColor = Color.White),
+                    )
+                }
                 FilaAccion("Cambiar PIN") { Nav.cambiarPin = true }
                 FilaAccion("Cerrar la estación ahora") { Casa.cerrar() }
             }
@@ -171,31 +207,9 @@ fun Ajustes() {
 
 @Composable
 private fun Grupo(titulo: String, contenido: @Composable ColumnScope.() -> Unit) {
-    val forma = RoundedCornerShape(20.dp)
     Column {
-        // los títulos de grupo hablan como la estación: mayúsculas finas, como las señales del mar
-        Senal(titulo, Modifier.padding(start = 16.dp, bottom = 8.dp, top = 14.dp))
-        Column(
-            Modifier.fillMaxWidth().clip(forma).background(Tema.p.superficie.copy(alpha = if (Tema.esNoche) 0.72f else 0.62f))
-                .border(0.8.dp, Tema.p.linea.copy(alpha = 0.7f), forma),
-            content = contenido,
-        )
-    }
-}
-
-@Composable
-private fun FilaLlave(titulo: String, detalle: String?, encendido: Boolean, alCambiar: (Boolean) -> Unit) {
-    val p = Tema.p
-    Row(
-        Modifier.fillMaxWidth().clickable { alCambiar(!encendido) }.padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(titulo, color = p.texto, fontFamily = Sans, fontSize = 16.sp)
-            if (detalle != null) Text(detalle, color = p.texto2, fontFamily = Sans, fontSize = 13.sp, lineHeight = 18.sp)
-        }
-        Spacer(Modifier.width(12.dp))
-        Llave(encendido)
+        Text(titulo, color = Tema.p.texto2, fontFamily = Sans, fontSize = 13.sp, modifier = Modifier.padding(start = 16.dp, bottom = 6.dp, top = 10.dp))
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Tema.p.superficie), content = contenido)
     }
 }
 

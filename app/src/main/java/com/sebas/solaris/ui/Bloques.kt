@@ -39,7 +39,6 @@ import com.sebas.solaris.Casa
 import com.sebas.solaris.EstiloFoto
 import com.sebas.solaris.Marcas
 import com.sebas.solaris.Pieza
-import com.sebas.solaris.Pegado
 import com.sebas.solaris.Sonidos
 
 /*
@@ -49,23 +48,18 @@ import com.sebas.solaris.Sonidos
 
 /** Un bloque de la lámina, con su estado vivo mientras se edita. */
 @Stable
-class Bloque(tipo: String, ids: List<String> = emptyList(), texto: String = "", opcion: String = "", pegados: List<Pegado> = emptyList()) {
+class Bloque(tipo: String, ids: List<String> = emptyList(), texto: String = "") {
     val clave: String = java.util.UUID.randomUUID().toString()
     var tipo by mutableStateOf(tipo)
     var ids by mutableStateOf(ids)
     var valor by mutableStateOf(TextFieldValue(texto))
-    /** Para los casetes: grande, mediano, mini o escondido. */
-    var opcion by mutableStateOf(opcion)
-    /** Lo que va pegado encima de este bloque. */
-    val pegados = mutableStateListOf<Pegado>().apply { addAll(pegados) }
     val esTexto: Boolean get() = tipo == Pieza.TEXTO
     val esFoto: Boolean get() = tipo == Pieza.FOTO || tipo == Pieza.FOTOS
-    val esMedio: Boolean get() = !esTexto
-    fun pieza() = Pieza(tipo, ids, valor.text, opcion, pegados.toList())
+    fun pieza() = Pieza(tipo, ids, valor.text)
 }
 
 fun bloquesDe(b: Borrador): List<Bloque> =
-    ordenar(Marcas.partir(b.texto, b.fotos, b.voces).map { Bloque(it.tipo, it.ids, it.texto, it.opcion, it.pegados) })
+    ordenar(Marcas.partir(b.texto, b.fotos, b.voces).map { Bloque(it.tipo, it.ids, it.texto) })
 
 /**
  * Deja la pila en orden: junta párrafos seguidos, quita fotos vacías, y deja siempre un párrafo
@@ -79,8 +73,7 @@ fun ordenar(l: List<Bloque>, compacta: Boolean = false): List<Bloque> {
             x.tipo = if (x.ids.size > 1) Pieza.FOTOS else Pieza.FOTO
         }
         val antes = limpia.lastOrNull()
-        // dos párrafos seguidos se juntan, salvo que tengan cosas pegadas (se correrían de lugar)
-        if (x.esTexto && antes != null && antes.esTexto && antes.pegados.isEmpty() && x.pegados.isEmpty()) {
+        if (x.esTexto && antes != null && antes.esTexto) {
             val a = antes.valor.text; val b = x.valor.text
             antes.valor = TextFieldValue(
                 when { a.isEmpty() -> b; b.isEmpty() -> a; else -> a + "\n" + b },
@@ -92,7 +85,7 @@ fun ordenar(l: List<Bloque>, compacta: Boolean = false): List<Bloque> {
     val salida = mutableListOf<Bloque>()
     limpia.forEachIndexed { i, x ->
         // un párrafo vacío solo sobrevive justo después de una foto o una voz, o si es lo único
-        if (x.esTexto && x.valor.text.isEmpty() && x.pegados.isEmpty()) {
+        if (x.esTexto && x.valor.text.isEmpty()) {
             val trasAlgo = i > 0 && !limpia[i - 1].esTexto
             if (compacta || (!trasAlgo && limpia.size > 1)) return@forEachIndexed
         }
@@ -105,11 +98,10 @@ fun ordenar(l: List<Bloque>, compacta: Boolean = false): List<Bloque> {
 
 /** Pasa la pila al borrador: el texto con sus marcas, y las fotos y voces en su orden. */
 fun volcar(b: Borrador, l: List<Bloque>) {
-    val piezas = l.map { it.pieza() }
-    b.texto = Marcas.unir(piezas)
-    val fotos = Marcas.fotosDe(piezas)
+    b.texto = Marcas.unir(l.map { it.pieza() })
+    val fotos = l.filter { it.esFoto }.flatMap { it.ids }
     if (fotos != b.fotos) b.fotos = fotos
-    val voces = Marcas.vocesDe(piezas)
+    val voces = l.filter { it.tipo == Pieza.VOZ }.flatMap { it.ids }
     if (voces != b.voces) b.voces = voces
 }
 

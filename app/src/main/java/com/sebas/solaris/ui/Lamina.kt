@@ -70,11 +70,7 @@ suspend fun compartirPdf(ctx: Context, b: Borrador) {
  * La lámina como imagen larga: lo que se ve en la app (diagramación, fotos, citas, sello) sobre el mar de este momento,
  * que se funde con el papel hacia abajo.
  */
-/** La lámina tal como se ve (con todo lo pegado), en páginas A5 de un PDF. */
-suspend fun compartirPdfDeLamina(ctx: Context, b: Borrador, contenido: androidx.compose.ui.graphics.ImageBitmap) =
-    compartirImagen(ctx, b, contenido, comoPdf = true)
-
-suspend fun compartirImagen(ctx: Context, b: Borrador, contenido: androidx.compose.ui.graphics.ImageBitmap, comoPdf: Boolean = false) {
+suspend fun compartirImagen(ctx: Context, b: Borrador, contenido: androidx.compose.ui.graphics.ImageBitmap) {
     val mar = MarVivo.cuadro()
     val fondo = Tema.p.fondo.toArgb()
     val papel = Tema.papelLamina
@@ -107,34 +103,13 @@ suspend fun compartirImagen(ctx: Context, b: Borrador, contenido: androidx.compo
         val dir = File(ctx.cacheDir, "compartir").apply { mkdirs(); listFiles()?.forEach { it.delete() } }
         val nombre = b.titulo.trim().ifBlank { "lamina " + formato("d MMM yyyy", b.creado) }
             .replace(Regex("[\\\\/:*?\"<>|]"), " ").take(60).trim()
-        if (comoPdf) {
-            // la misma lámina, cortada en páginas A5 (420 × 595 puntos)
-            val doc = android.graphics.pdf.PdfDocument()
-            val anchoPag = 420; val altoPag = 595
-            val k = anchoPag.toFloat() / sal.width
-            val altoCorte = (altoPag / k).toInt()
-            var y = 0; var n = 1
-            while (y < sal.height) {
-                val pag = doc.startPage(android.graphics.pdf.PdfDocument.PageInfo.Builder(anchoPag, altoPag, n).create())
-                pag.canvas.drawColor(fondo)
-                val alto = minOf(altoCorte, sal.height - y)
-                pag.canvas.drawBitmap(sal, android.graphics.Rect(0, y, sal.width, y + alto), RectF(0f, 0f, anchoPag.toFloat(), alto * k), Paint(Paint.FILTER_BITMAP_FLAG))
-                doc.finishPage(pag)
-                y += altoCorte; n++
-            }
-            val f = File(dir, "$nombre.pdf")
-            f.outputStream().use { doc.writeTo(it) }
-            doc.close()
-            f
-        } else {
-            val f = File(dir, "$nombre.jpg")
-            f.outputStream().use { sal.compress(android.graphics.Bitmap.CompressFormat.JPEG, 93, it) }
-            f
-        }
+        val f = File(dir, "$nombre.jpg")
+        f.outputStream().use { sal.compress(android.graphics.Bitmap.CompressFormat.JPEG, 93, it) }
+        f
     }
     val uri = FileProvider.getUriForFile(ctx, ctx.packageName + ".archivos", archivo)
     val envio = Intent(Intent.ACTION_SEND).apply {
-        type = if (comoPdf) "application/pdf" else "image/jpeg"
+        type = "image/jpeg"
         putExtra(Intent.EXTRA_STREAM, uri)
         clipData = ClipData.newRawUri(archivo.name, uri)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

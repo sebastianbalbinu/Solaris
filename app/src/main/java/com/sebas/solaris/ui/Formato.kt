@@ -69,19 +69,17 @@ class FormatoSencillo(
             if (linea.isNotBlank()) primera = false
             inicio = fin + 1
         }
-        // las marcas (** y ~~) se guardan pero no se ven: quedan diminutas y transparentes, como en una hoja impresa
-        val oculta = SpanStyle(color = Color.Transparent, fontSize = (tam * 0.06f).sp, letterSpacing = 0.sp)
         Regex("\\*\\*([^*\\n]+)\\*\\*").findAll(t).forEach { m ->
             val a = m.range.first; val b = m.range.last + 1
-            estilos += Triple(oculta, a, a + 2)
+            estilos += Triple(SpanStyle(color = tenue), a, a + 2)
             estilos += Triple(SpanStyle(fontWeight = FontWeight.SemiBold), a + 2, b - 2)
-            estilos += Triple(oculta, b - 2, b)
+            estilos += Triple(SpanStyle(color = tenue), b - 2, b)
         }
         Regex("(?<!~)~~([^~\\n]+)~~(?!~)").findAll(t).forEach { m ->
             val a = m.range.first; val b = m.range.last + 1
-            estilos += Triple(oculta, a, a + 2)
+            estilos += Triple(SpanStyle(color = tenue), a, a + 2)
             estilos += Triple(SpanStyle(textDecoration = TextDecoration.LineThrough, color = cita), a + 2, b - 2)
-            estilos += Triple(oculta, b - 2, b)
+            estilos += Triple(SpanStyle(color = tenue), b - 2, b)
         }
         val salida = buildAnnotatedString {
             append(visible.toString())

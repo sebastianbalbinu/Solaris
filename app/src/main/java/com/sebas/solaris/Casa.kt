@@ -60,10 +60,7 @@ object Casa {
     private lateinit var prefs: SharedPreferences
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val candadoSync = Mutex()
-    // la caché de fotos se mide por lo que pesan (no por cuántas son): unas pocas grandes no la llenan de golpe
-    private val cache = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 1024 / 6).toInt()) {
-        override fun sizeOf(key: String, value: Bitmap) = value.byteCount / 1024
-    }
+    private val cache = LruCache<String, Bitmap>(48)
 
     var conectada by mutableStateOf(false)
         private set

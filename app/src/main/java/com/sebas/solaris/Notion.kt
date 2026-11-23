@@ -110,10 +110,8 @@ object Notion {
         val id = reId.find(ruta)?.groupValues?.get(1)
         val lineas = md.replace("\r", "").lines()
         val primera = lineas.indexOfFirst { it.isNotBlank() }
-        val titulo = (if (primera >= 0 && lineas[primera].startsWith("# ")) lineas[primera].removePrefix("# ").trim()
-            else ruta.substringAfterLast('/').removeSuffix(".md").replace(Regex("\\s*[0-9a-f]{32}$"), ""))
-        // Notion llama "Untitled" a las páginas sin nombre: aquí son notas sin título
-        .let { if (it.equals("Untitled", ignoreCase = true) || it.equals("Sin título", ignoreCase = true)) "" else it }
+        val titulo = if (primera >= 0 && lineas[primera].startsWith("# ")) lineas[primera].removePrefix("# ").trim()
+            else ruta.substringAfterLast('/').removeSuffix(".md").replace(Regex("\\s*[0-9a-f]{32}$"), "")
         val cuerpo = if (primera >= 0 && lineas[primera].startsWith("# ")) lineas.drop(primera + 1) else lineas
         val carpeta = ruta.substringBeforeLast('/', "")
         val imagenes = mutableListOf<String>()

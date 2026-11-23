@@ -76,16 +76,16 @@ fun Grabacion() {
 
     fun empezar() {
         val id = Item.nuevoId()
-        if (!Grabadora.grabar(id, Casa.archivoCinta(id))) aviso = "No se pudo usar el micrófono."
+        if (!Grabadora.grabar(id, Casa.archivoCinta(id))) { aviso = "No se pudo usar el micrófono."; Nav.grabando = false }
         else ServicioGrabacion.iniciar(ctx)
     }
     val permisos = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { r ->
-        if (r[Manifest.permission.RECORD_AUDIO] == true) empezar() else aviso = "Solaris necesita el micrófono para grabar."
+        if (r[Manifest.permission.RECORD_AUDIO] == true) empezar() else { aviso = "Solaris necesita el micrófono para grabar."; Nav.grabando = false }
     }
 
-    // REC: empieza a grabar cuando uno quiere (pidiendo permisos si hace falta), nunca solo al abrir
-    fun rec() {
-        if (Grabadora.grabando || toma != null) return
+    // al abrirse, empieza a grabar (pidiendo permisos si hace falta)
+    LaunchedEffect(Nav.grabando) {
+        if (!Nav.grabando || Grabadora.grabando || toma != null) return@LaunchedEffect
         Grabadora.detenerReproduccion()
         val faltan = mutableListOf<String>()
         if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) faltan += Manifest.permission.RECORD_AUDIO
@@ -107,24 +107,49 @@ fun Grabacion() {
         ServicioGrabacion.terminar(ctx)
         Nav.grabando = false
         if (id != null) {
-            if (dur < 600) { Casa.archivoCinta(id).delete(); Nav.alGrabar = null } else toma = Toma(id, dur, inicio)
+            if (dur < 600) Casa.archivoCinta(id).delete() else toma = Toma(id, dur, inicio)
         }
     }
 
     val visible = Nav.grabando && toma == null
-    fun cerrar() { Nav.grabando = false; Nav.alGrabar = null }
-    if (visible) BackHandler { if (Grabadora.grabando) detener() else cerrar() }
+    if (visible) BackHandler { detener() }
 
     AnimatedVisibility(visible, enter = fadeIn(tween(300)), exit = fadeOut(tween(300))) {
-        Box(Modifier.fillMaxSize().background(Color(0xA602070F)).clickable(remember { MutableInteractionSource() }, null) { if (!Grabadora.grabando) cerrar() })
+        Box(Modifier.fillMaxSize().background(Color(0x8C02070F)).clickable(remember { MutableInteractionSource() }, null) {})
     }
     AnimatedVisibility(
         visible,
-        enter = slideInVertically(spring(dampingRatio = 0.86f, stiffness = 260f)) { it / 2 } + fadeIn(tween(250)),
-        exit = slideOutVertically(spring(dampingRatio = 1f, stiffness = 380f)) { it / 2 } + fadeOut(tween(250)),
+        enter = slideInVertically(spring(dampingRatio = 0.82f, stiffness = 260f)) { it / 2 } + fadeIn(tween(250)),
+        exit = slideOutVertically(tween(320)) { it / 2 } + fadeOut(tween(250)),
     ) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-            Deck(alRec = { Sonidos.tecla(); rec() }, alStop = { Sonidos.tecla(); if (Grabadora.grabando) detener() else cerrar() })
+        Column(
+            Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Spacer(Modifier.weight(0.6f))
+            Casete(Modifier.fillMaxWidth())
+            Spacer(Modifier.height(36.dp))
+            Text(reloj(Grabadora.posicion), color = Azules.Crema, fontFamily = Mono, fontSize = 52.sp, letterSpacing = 3.sp)
+            Spacer(Modifier.height(10.dp))
+            Senal(if (Grabadora.pausado) "en pausa" else "grabando · sigue aunque apagues la pantalla", color = Azules.Bruma)
+            Spacer(Modifier.height(26.dp))
+            Nivel(Modifier.fillMaxWidth().height(70.dp))
+            Spacer(Modifier.weight(1f))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(36.dp)) {
+                Redondo(tam = 56.dp, fondo = Color(0x33B9C6CC), alTocar = { Sonidos.tecla(); Grabadora.pausarGrabacion() }) {
+                    if (Grabadora.pausado) Text("▶", color = Azules.Crema, fontSize = 18.sp)
+                    else Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        repeat(2) { Box(Modifier.size(4.dp, 18.dp).clip(RoundedCornerShape(2.dp)).background(Azules.Crema)) }
+                    }
+                }
+                // detener: un cuadrado dentro del anillo rojo
+                Box(
+                    Modifier.presionable { Sonidos.tecla(); detener() }.size(84.dp).clip(CircleShape).border(3.dp, Rojo, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) { Box(Modifier.size(30.dp).clip(RoundedCornerShape(7.dp)).background(Rojo)) }
+                Spacer(Modifier.size(56.dp))
+            }
+            Spacer(Modifier.height(36.dp))
         }
     }
 
@@ -153,8 +178,6 @@ private fun Elegir(toma: Toma?, alCerrar: () -> Unit) {
         val n = nombre.trim().ifBlank { (if (rumor) "rumor " else "voz ") + "%03d".format(numero) }
         Casa.nuevaCinta(t.id, n, t.dur, t.inicio, rumor)
         Casa.quitarPendiente(t.id)
-        Nav.alGrabar?.invoke(t.id)
-        Nav.alGrabar = null
         if (!rumor) Transcriptor.lanzar(t.id) {}
         Sonidos.acople()
         alCerrar()
@@ -211,12 +234,7 @@ fun Escuchar() {
         Text(c.title.ifBlank { "cinta sin nombre" }, color = p.texto, fontFamily = Serif, fontSize = 30.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
         // la cinta: avance y controles
         val avance = if (propia && c.dur > 0) (Grabadora.posicion.toFloat() / c.dur).coerceIn(0f, 1f) else 0f
-        val giro = carretes(propia && Grabadora.reproduciendo)
-        CaseteDibujo(
-            Modifier.fillMaxWidth(0.78f).align(Alignment.CenterHorizontally), c.title.ifBlank { if (c.esRumor) "rumor" else "voz" },
-            (if (c.esRumor) "RUMOR · " else "VOZ · ") + duracion(c.dur) + " · " + formato("d MMM", c.created).uppercase(),
-            giro = giro, avance = avance, rumor = c.esRumor,
-        )
+        Onda(c.id, Modifier.fillMaxWidth().height(34.dp), p.texto2.copy(alpha = 0.35f), avance, p.acento)
         Row(Modifier.fillMaxWidth()) {
             Senal(duracion(if (propia) Grabadora.posicion else 0L), Modifier.weight(1f))
             Senal(duracion(c.dur))
@@ -266,81 +284,71 @@ fun Escuchar() {
 
 // ---------------- el casete y el nivel ----------------
 
-/**
- * El deck: panel azul con tornillos, la bahía con el casete adentro, el contador, dos vúmetros con aguja
- * y las teclas de verdad (REC, PAUSA, STOP). No graba hasta que uno toca REC.
- */
+/** Un casete negro dibujado a mano: etiqueta crema, carretes que giran mientras graba. */
 @Composable
-private fun Deck(alRec: () -> Unit, alStop: () -> Unit) {
-    val graba = Grabadora.grabando
-    val pausa = Grabadora.pausado
-    val giro = carretes(graba && !pausa, 2000)
-    // la aguja tiene inercia: sube rápido y cae despacio, como las de verdad
-    var aguja by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(graba, pausa) {
-        while (isActive) {
-            val meta = if (graba && !pausa) (Grabadora.nivel * 1.25f).coerceIn(0f, 1f) else 0f
-            aguja += (meta - aguja) * (if (meta > aguja) 0.45f else 0.12f)
-            delay(30)
-        }
-    }
+private fun Casete(modifier: Modifier) {
+    val giro = rememberInfiniteTransition(label = "carretes")
+    val angulo by giro.animateFloat(0f, 360f, infiniteRepeatable(tween(2600, easing = LinearEasing)), label = "giro")
+    val ang = if (Grabadora.pausado) 0f else angulo
     val numero = Casa.cintas().size + 1
-    PanelDeck(Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("SOLARIS", color = TintaDeck, fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 13.sp, letterSpacing = 4.sp)
-                Text("CASSETTE DECK · TC-58", color = TintaDeck.copy(alpha = 0.6f), fontFamily = Mono, fontSize = 9.sp, letterSpacing = 1.5.sp)
+    Box(modifier.aspectRatio(1.62f)) {
+        Canvas(Modifier.fillMaxSize()) {
+            val w = size.width; val h = size.height
+            drawRoundRect(Color(0xFF101214), Offset.Zero, size, CornerRadius(w * 0.05f))
+            drawRoundRect(Color(0xFF2A2E33), Offset(6f, 6f), Size(w - 12f, h - 12f), CornerRadius(w * 0.045f), style = androidx.compose.ui.graphics.drawscope.Stroke(2f))
+            // etiqueta
+            val lx = w * 0.08f; val ly = h * 0.09f; val lw = w * 0.84f; val lh = h * 0.6f
+            drawRoundRect(Color(0xFFE9E0CC), Offset(lx, ly), Size(lw, lh), CornerRadius(w * 0.015f))
+            drawRect(Azules.Cianotipo, Offset(lx, ly + lh * 0.21f), Size(lw, lh * 0.025f))
+            // ventana de los carretes
+            val vx = lx + lw * 0.2f; val vy = ly + lh * 0.55f; val vw = lw * 0.6f; val vh = lh * 0.36f
+            drawRoundRect(Color(0xFF141618), Offset(vx, vy), Size(vw, vh), CornerRadius(vh / 2))
+            drawRect(Color(0xFF46342A), Offset(vx + vw * 0.28f, vy + vh * 0.3f), Size(vw * 0.44f, vh * 0.4f))
+            val r = vh * 0.36f
+            for (cx in listOf(vx + vw * 0.2f, vx + vw * 0.8f)) {
+                val c = Offset(cx, vy + vh / 2)
+                drawCircle(Color(0xFFE9E0CC), r, c)
+                drawCircle(Color(0xFF141618), r * 0.42f, c)
+                for (k in 0 until 6) {
+                    val a = Math.toRadians((ang + k * 60f).toDouble())
+                    drawLine(
+                        Color(0xFF141618),
+                        Offset(c.x + (r * 0.42f * cos(a)).toFloat(), c.y + (r * 0.42f * sin(a)).toFloat()),
+                        Offset(c.x + (r * 0.8f * cos(a)).toFloat(), c.y + (r * 0.8f * sin(a)).toFloat()),
+                        r * 0.16f, StrokeCap.Round,
+                    )
+                }
             }
-            Column(horizontalAlignment = Alignment.End) {
-                Text(if (Nav.alGrabar != null) "SE PEGA EN LA NOTA" else "AL MAR", color = TintaDeck.copy(alpha = 0.6f), fontFamily = Mono, fontSize = 9.sp, letterSpacing = 1.5.sp)
-                Text("AUTO STOP", color = TintaDeck.copy(alpha = 0.6f), fontFamily = Mono, fontSize = 9.sp, letterSpacing = 1.5.sp)
+            // la boca de abajo y los tornillos
+            val bw = w * 0.56f
+            val boca = androidx.compose.ui.graphics.Path().apply {
+                moveTo(w / 2 - bw / 2, h); lineTo(w / 2 - bw / 2 + w * 0.05f, h * 0.8f)
+                lineTo(w / 2 + bw / 2 - w * 0.05f, h * 0.8f); lineTo(w / 2 + bw / 2, h); close()
             }
-        }
-        Spacer(Modifier.height(14.dp))
-        // la bahía: marco de aluminio y el casete adentro
-        Box(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-                .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFFD5DAE1), Color(0xFFA9AFB8))))
-                .padding(10.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF15181E)).padding(horizontal = 18.dp, vertical = 14.dp),
-        ) {
-            CaseteDibujo(
-                Modifier.fillMaxWidth(), "registro %03d".format(numero),
-                formato("d MMM · HH:mm", System.currentTimeMillis()).uppercase() + " · " + Corriente.nombreVisible,
-                giro = giro, avance = (Grabadora.posicion / 3_600_000f).coerceIn(0f, 0.95f),
-            )
-        }
-        Spacer(Modifier.height(16.dp))
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Vumetro(Modifier.weight(1f), aguja, "L")
-            Vumetro(Modifier.weight(1f), (aguja * 0.94f), "R")
-        }
-        Spacer(Modifier.height(14.dp))
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            ContadorDeck(reloj(if (graba) Grabadora.posicion else 0L), graba && !pausa)
-            Spacer(Modifier.width(12.dp))
-            Text(
-                when {
-                    !graba -> "toca REC cuando quieras"
-                    pausa -> "en pausa"
-                    else -> "grabando · sigue con la pantalla apagada"
-                },
-                color = TintaDeck.copy(alpha = 0.75f), fontFamily = Sans, fontSize = 13.sp, lineHeight = 17.sp,
-            )
-        }
-        Spacer(Modifier.height(18.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TeclaDeck("RECORD", graba, Modifier.weight(1f), habilitada = !graba, alTocar = alRec) {
-                Box(Modifier.size(14.dp).clip(CircleShape).background(RojoGrabar))
-            }
-            TeclaDeck("PAUSE", pausa, Modifier.weight(1f), habilitada = graba, alTocar = { Sonidos.tecla(); Grabadora.pausarGrabacion() }) {
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { repeat(2) { Box(Modifier.size(4.dp, 15.dp).background(Color(0xFF2A2E35))) } }
-            }
-            TeclaDeck("STOP", false, Modifier.weight(1f), alTocar = alStop) {
-                Box(Modifier.size(14.dp).background(Color(0xFF2A2E35)))
+            drawPath(boca, Color(0xFF181A1C))
+            for ((x, y) in listOf(0.035f to 0.06f, 0.965f to 0.06f, 0.035f to 0.94f, 0.965f to 0.94f)) {
+                drawCircle(Color(0xFF34383C), w * 0.012f, Offset(w * x, h * y))
             }
         }
-        Spacer(Modifier.height(6.dp))
-        Spacer(Modifier.navigationBarsPadding())
+        // la letra de la etiqueta
+        Column(Modifier.fillMaxSize().padding(start = 0.dp)) {
+            Row(Modifier.fillMaxWidth().fillMaxHeight(0.19f).padding(horizontal = 0.dp), verticalAlignment = Alignment.Bottom) {
+                Spacer(Modifier.fillMaxWidth(0.12f))
+                Text("SOLARIS", color = Azules.Prusia, fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 14.sp, letterSpacing = 5.sp, modifier = Modifier.weight(1f))
+                Text("C-60", color = Azules.Cianotipo, fontFamily = Mono, fontSize = 11.sp)
+                Spacer(Modifier.fillMaxWidth(0.14f))
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                Spacer(Modifier.fillMaxWidth(0.12f))
+                Column {
+                    Text("registro %03d".format(numero), color = Azules.Prusia, fontFamily = Serif, fontStyle = FontStyle.Italic, fontSize = 22.sp)
+                    Text(
+                        formato("d MMM · HH:mm", System.currentTimeMillis()).uppercase() + " · " + Corriente.nombreVisible,
+                        color = Color(0xFF3C5A6E), fontFamily = Mono, fontSize = 9.sp, letterSpacing = 1.sp, maxLines = 1,
+                    )
+                }
+            }
+        }
     }
 }
 
