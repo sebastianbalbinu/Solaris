@@ -1,4 +1,8 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.sebas.solaris.ui
+
+import androidx.compose.ui.input.pointer.pointerInput
 
 import android.graphics.Bitmap
 import androidx.compose.animation.AnimatedVisibility
@@ -104,7 +108,10 @@ fun Solaris(act: MainActivity) {
         // un solo mar, debajo de todo: la entrada y la orilla son el mismo; sigue vivo mientras uno escribe (escribir lo mueve)
         if (enCasa) {
             val enSuperficie by remember { derivedStateOf { Nav.listaOrilla.firstVisibleItemIndex == 0 } }
-            val marVivo = !Casa.abierta || Nav.borrador != null || (!encima && enSuperficie)
+            // escribiendo con el teclado abierto, el papel tapa el mar: el video descansa (queda su cuadro quieto)
+            val teclado = WindowInsets.isImeVisible
+            val escribiendo = Nav.borrador != null && teclado && Tema.papelLamina >= 0.8f
+            val marVivo = !Casa.abierta || (Nav.borrador != null && !escribiendo) || (!encima && enSuperficie)
             DisposableEffect(Unit) { Vidrio.activo = true; onDispose { Vidrio.activo = false } }
             // El vidrio no mira el video en vivo (eso costaba un desenfoque por cuadro): mira una foto chiquita
             // del mar que se renueva cada segundo y medio. Va detrás del mar, así que no se ve sola.
@@ -143,7 +150,11 @@ fun Solaris(act: MainActivity) {
                 transitionSpec = { fadeIn(tween(1100, delayMillis = 150)) togetherWith fadeOut(tween(900)) },
                 label = "llegada",
             ) { abierta ->
-                Box(Modifier.fillMaxSize().enfoqueAlEntrar(transition, 24.dp)) { if (abierta) Interior() else Entrada(act) }
+                // sin desenfoque de pantalla completa (era lo que más trababa al entrar): un leve acercamiento
+                val escala by transition.animateFloat({ tween(900, easing = FastOutSlowInEasing) }, label = "acercar") {
+                    if (it == androidx.compose.animation.EnterExitState.Visible) 1f else 1.04f
+                }
+                Box(Modifier.fillMaxSize().graphicsLayer { scaleX = escala; scaleY = escala }) { if (abierta) Interior() else Entrada(act) }
             }
         }
         // escribiendo, el papel tapa el cielo, pero la luz de los relámpagos pasa a través de él
@@ -340,8 +351,18 @@ fun Interior() {
     val encima = Nav.borrador != null || Nav.ajustes || Nav.cambiarPin
     val orilla by animateFloatAsState(if (encima) 0f else 1f, tween(if (encima) 220 else 500), label = "orilla")
     LaunchedEffect(Unit) { snapshotFlow { orilla }.collect { Vidrio.presencia = it } }
+    // las letras de las notas se cargan de antemano: abrir la primera nota no espera a leerlas
+    val letras = androidx.compose.ui.platform.LocalFontFamilyResolver.current
+    LaunchedEffect(Unit) { listOf(Serif, Sans, Mono, Maquina, Mano).forEach { runCatching { letras.preload(it) } } }
     Box(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().graphicsLayer { alpha = orilla }) { if (orilla > 0.01f) Orilla() }
+        // la orilla se queda armada debajo (volver de una nota no la reconstruye); solo se oculta
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = orilla }) { Orilla() }
+        // y mientras está oculta no recibe toques
+        if (encima) Box(
+            Modifier.fillMaxSize().pointerInput(Unit) {
+                awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } }
+            }
+        )
         Encima(Nav.borrador != null) { ultimoBorrador?.let { Editor(it) } }
         Encima(Nav.ajustes) { Ajustes() }
         Encima(Nav.cambiarPin) { Box(Modifier.fillMaxSize().background(Tema.p.fondo).systemBarsPadding()) { PinNuevo { Nav.cambiarPin = false } } }
@@ -358,5 +379,5 @@ private fun Encima(visible: Boolean, contenido: @Composable () -> Unit) {
         enter = slideInVertically(spring(dampingRatio = 0.86f, stiffness = 300f)) { it / 5 } + fadeIn(tween(320)) +
             scaleIn(spring(dampingRatio = 0.9f, stiffness = 300f), initialScale = 0.97f),
         exit = slideOutVertically(spring(dampingRatio = 1f, stiffness = 420f)) { it / 5 } + fadeOut(tween(240)),
-    ) { Box(Modifier.fillMaxSize().enfoqueAlEntrar(transition)) { contenido() } }
+    ) { Box(Modifier.fillMaxSize()) { contenido() } }
 }

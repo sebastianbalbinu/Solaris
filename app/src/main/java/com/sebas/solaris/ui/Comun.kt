@@ -1,5 +1,7 @@
 package com.sebas.solaris.ui
 
+import kotlinx.coroutines.launch
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -218,14 +220,21 @@ fun Puntos(llenos: Int, total: Int, color: Color) {
 @Composable
 fun Modifier.presionable(habilitado: Boolean = true, alTocar: () -> Unit): Modifier {
     val fuente = remember { MutableInteractionSource() }
-    val presionado by fuente.collectIsPressedAsState()
-    val escala by animateFloatAsState(
-        if (presionado && habilitado) 0.94f else 1f,
-        spring(dampingRatio = 0.55f, stiffness = 520f),
-        label = "presion",
-    )
+    // la presión se anima sola, sin volver a armar lo que se toca (deslizar sobre una lista ya no recompone cada tarjeta)
+    val escala = remember { androidx.compose.animation.core.Animatable(1f) }
+    LaunchedEffect(fuente, habilitado) {
+        val resorte = spring<Float>(dampingRatio = 0.55f, stiffness = 520f)
+        fuente.interactions.collect { i ->
+            launch {
+                when (i) {
+                    is androidx.compose.foundation.interaction.PressInteraction.Press -> if (habilitado) escala.animateTo(0.94f, resorte)
+                    else -> escala.animateTo(1f, resorte)
+                }
+            }
+        }
+    }
     return this
-        .graphicsLayer { scaleX = escala; scaleY = escala }
+        .graphicsLayer { scaleX = escala.value; scaleY = escala.value }
         .clickable(interactionSource = fuente, indication = null, enabled = habilitado) { alTocar() }
 }
 

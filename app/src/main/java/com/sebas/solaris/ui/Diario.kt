@@ -1,5 +1,11 @@
 package com.sebas.solaris.ui
 
+import androidx.compose.foundation.layout.offset
+
+import androidx.compose.ui.draw.shadow
+
+import androidx.compose.ui.draw.drawBehind
+
 import android.graphics.Bitmap
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -267,10 +273,25 @@ fun Interruptor(titulo: String, detalle: String?, encendido: Boolean, alCambiar:
             if (detalle != null) Text(detalle, color = p.texto2, fontFamily = Sans, fontSize = 13.sp, lineHeight = 18.sp)
         }
         Spacer(Modifier.width(12.dp))
-        val fondo = if (encendido) p.acento else p.linea
-        Box(Modifier.size(width = 48.dp, height = 28.dp).clip(CircleShape).background(fondo).padding(3.dp)) {
-            Box(Modifier.align(if (encendido) Alignment.CenterEnd else Alignment.CenterStart).size(22.dp).clip(CircleShape).background(Color.White))
-        }
+        Llave(encendido)
+    }
+}
+
+/** La llave de los interruptores: se desliza y cambia de color suave. */
+@Composable
+fun Llave(encendido: Boolean, modifier: Modifier = Modifier) {
+    val p = Tema.p
+    val t by androidx.compose.animation.core.animateFloatAsState(if (encendido) 1f else 0f, androidx.compose.animation.core.spring(dampingRatio = 0.8f, stiffness = 600f), label = "llave")
+    val apagado = p.texto2.copy(alpha = 0.22f)
+    Box(
+        modifier.size(width = 50.dp, height = 30.dp).clip(CircleShape)
+            .drawBehind { drawRect(androidx.compose.ui.graphics.lerp(apagado, p.acento, t)) }
+            .padding(3.dp)
+    ) {
+        Box(
+            Modifier.offset { androidx.compose.ui.unit.IntOffset((20.dp.toPx() * t).toInt(), 0) }
+                .size(24.dp).shadow(2.dp, CircleShape).clip(CircleShape).background(Color.White)
+        )
     }
 }
 

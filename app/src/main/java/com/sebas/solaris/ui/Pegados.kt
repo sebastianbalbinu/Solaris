@@ -1,5 +1,13 @@
 package com.sebas.solaris.ui
 
+import androidx.compose.ui.input.pointer.positionChanged
+
+import androidx.compose.foundation.gestures.calculateRotation
+
+import androidx.compose.foundation.gestures.calculateZoom
+
+import androidx.compose.foundation.gestures.calculatePan
+
 import android.graphics.Bitmap
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -254,6 +262,8 @@ fun CapaPegados(
                 val base = if (p.tipo == Pegado.TRAZO) anchoTrazo(p) else anchoBase(p.tipo)
                 val ancho = (base * p.escala).dp
                 var tam by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+                // se lee al momento del toque (sin reiniciar el gesto cuando cambia la selección)
+                val elegidoAhora by rememberUpdatedState(elegido == p.clave)
                 Box(
                     Modifier
                         .wrapContentSize(unbounded = true, align = Alignment.TopStart)
@@ -261,37 +271,58 @@ fun CapaPegados(
                             androidx.compose.ui.unit.IntOffset((p.x * anchoPx - tam.width / 2f).toInt(), (p.y * densidad - tam.height / 2f).toInt())
                         }
                         .onSizeChanged { tam = it }
+                        // girado antes de los toques: lo que se toca es la figura girada, no su caja
+                        .graphicsLayer { rotationZ = p.giro }
                         .then(
                             if (!editable) Modifier else Modifier
                                 .pointerInput(p.clave) {
-                                    detectTapGestures(onTap = { alElegir(if (elegido == p.clave) null else p.clave) })
+                                    detectTapGestures(onTap = { alElegir(if (elegidoAhora) null else p.clave) })
                                 }
                                 .pointerInput(p.clave) {
-                                    detectTransformGestures { _, pan, zoom, giro ->
-                                        val i = pegados.indexOfFirst { it.clave == p.clave }
-                                        if (i < 0) return@detectTransformGestures
-                                        val q = pegados[i]
-                                        pegados[i] = q.copy(
-                                            x = q.x + pan.x / anchoPx.coerceAtLeast(1f),
-                                            y = q.y + pan.y / densidad,
-                                            escala = (q.escala * zoom).coerceIn(0.35f, 3.5f),
-                                            giro = q.giro + giro,
-                                        )
-                                        if (elegido != p.clave) alElegir(p.clave)
-                                    }
-                                }
-                                .pointerInput(p.clave) {
-                                    // al soltar, se guarda
+                                    // Con un dedo, solo se mueve si ya está elegido (si no, el dedo baja por la hoja).
+                                    // Con dos dedos se mueve, gira y agranda siempre.
                                     awaitEachGesture {
                                         awaitFirstDown(requireUnconsumed = false)
+                                        val yaElegido = elegidoAhora
+                                        var cambio = false
+                                        var tomado = false
+                                        val tolerancia = viewConfiguration.touchSlop
+                                        var recorrido = Offset.Zero
                                         do {
                                             val e = awaitPointerEvent()
+                                            val dedos = e.changes.count { it.pressed }
+                                            if (e.changes.any { it.isConsumed } && !tomado) continue
+                                            val pan = e.calculatePan()
+                                            val zoom = e.calculateZoom()
+                                            val giro = e.calculateRotation()
+                                            if (!tomado) {
+                                                recorrido += pan
+                                                tomado = dedos >= 2 || (yaElegido && recorrido.getDistance() > tolerancia)
+                                            }
+                                            if (tomado && (pan != Offset.Zero || zoom != 1f || giro != 0f)) {
+                                                val i = pegados.indexOfFirst { it.clave == p.clave }
+                                                if (i >= 0) {
+                                                    val q = pegados[i]
+                                                    // el arrastre llega en el sentido de la figura girada: se endereza
+                                                    val r = Math.toRadians(q.giro.toDouble())
+                                                    val dx = (pan.x * kotlin.math.cos(r) - pan.y * kotlin.math.sin(r)).toFloat()
+                                                    val dy = (pan.x * kotlin.math.sin(r) + pan.y * kotlin.math.cos(r)).toFloat()
+                                                    pegados[i] = q.copy(
+                                                        x = q.x + dx / anchoPx.coerceAtLeast(1f),
+                                                        y = q.y + dy / densidad,
+                                                        escala = (q.escala * zoom).coerceIn(0.35f, 3.5f),
+                                                        giro = q.giro + giro,
+                                                    )
+                                                    cambio = true
+                                                    if (!elegidoAhora) alElegir(p.clave)
+                                                }
+                                                e.changes.forEach { if (it.positionChanged()) it.consume() }
+                                            }
                                         } while (e.changes.any { it.pressed })
-                                        alCambiar()
+                                        if (cambio) alCambiar()
                                     }
                                 }
                         )
-                        .graphicsLayer { rotationZ = p.giro }
                         .then(
                             if (elegido == p.clave) Modifier.drawBehind {
                                 drawRoundRect(

@@ -101,11 +101,23 @@ fun Modifier.vidrio(
 }
 
 /** Un borde que se oscurece hacia el agua honda: lo que se desliza se disuelve ahí (un degradado, nada más). */
-fun Modifier.nieblaDeBorde(arriba: Boolean, tinte: Color = Azules.Abismo): Modifier =
+fun Modifier.nieblaDeBorde(arriba: Boolean, tinte: Color = Azules.Abismo, denso: Boolean = false): Modifier =
     this.background(
-        if (arriba) Brush.verticalGradient(0f to tinte.copy(alpha = 0.92f), 0.6f to tinte.copy(alpha = 0.55f), 1f to Color.Transparent)
-        else Brush.verticalGradient(0f to Color.Transparent, 0.5f to tinte.copy(alpha = 0.6f), 1f to tinte.copy(alpha = 0.95f))
+        if (arriba) Brush.verticalGradient(0f to tinte.copy(alpha = 0.96f), (if (denso) 0.7f else 0.6f) to tinte.copy(alpha = if (denso) 0.82f else 0.55f), 1f to Color.Transparent)
+        else Brush.verticalGradient(0f to Color.Transparent, 0.45f to tinte.copy(alpha = if (denso) 0.78f else 0.6f), 1f to tinte.copy(alpha = 0.97f))
     )
+
+/** Lo que se desliza se pierde en el papel arriba y abajo: se pinta el papel encima (sin capas aparte, que costaban en cada cuadro). */
+fun Modifier.bordesDePapel(arriba: Color, abajo: Color, alto: Dp = 36.dp, bajo: Dp = 96.dp): Modifier =
+    this.drawWithContent {
+        drawContent()
+        val a = alto.toPx(); val b = bajo.toPx()
+        drawRect(Brush.verticalGradient(0f to arriba, 1f to arriba.copy(alpha = 0f), startY = 0f, endY = a), size = androidx.compose.ui.geometry.Size(size.width, a))
+        drawRect(
+            Brush.verticalGradient(0f to abajo.copy(alpha = 0f), 1f to abajo, startY = size.height - b, endY = size.height),
+            topLeft = Offset(0f, size.height - b), size = androidx.compose.ui.geometry.Size(size.width, b),
+        )
+    }
 
 /** Lo que se desliza se desvanece en los bordes de arriba y de abajo (sin cortarse en seco). */
 fun Modifier.bordesQueSeDisuelven(arriba: Dp = 40.dp, abajo: Dp = 110.dp): Modifier =
