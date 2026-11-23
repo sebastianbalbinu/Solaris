@@ -121,6 +121,11 @@ fun Ajustes() {
                         colors = SwitchDefaults.colors(checkedTrackColor = Azules.Cianotipo, checkedThumbColor = Color.White),
                     )
                 }
+                if (com.sebas.solaris.Ambiente.activo) {
+                    BarraDeSonido("Volumen del mar", "Bájalo para escuchar tu música con el mar debajo", com.sebas.solaris.Ambiente.volumen) { com.sebas.solaris.Ambiente.fijarVolumen(it) }
+                    BarraDeSonido("Lluvia", null, com.sebas.solaris.Ambiente.nivelLluvia) { com.sebas.solaris.Ambiente.fijarLluvia(it) }
+                    BarraDeSonido("Truenos", null, com.sebas.solaris.Ambiente.nivelTruenos) { com.sebas.solaris.Ambiente.fijarTruenos(it) }
+                }
                 var sonido by remember { mutableStateOf(Sonidos.conSonido) }
                 var vibra by remember { mutableStateOf(Sonidos.conVibracion) }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -248,4 +253,21 @@ private fun FilaAccion(titulo: String, color: Color? = null, alTocar: () -> Unit
         titulo, color = color ?: Tema.p.acento, fontFamily = Sans, fontSize = 16.sp,
         modifier = Modifier.fillMaxWidth().clickable { Sonidos.tic(); alTocar() }.padding(horizontal = 16.dp, vertical = 15.dp),
     )
+}
+
+@Composable
+private fun BarraDeSonido(titulo: String, detalle: String?, valor: Float, alCambiar: (Float) -> Unit) {
+    val p = Tema.p
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(titulo, color = p.texto, fontFamily = Sans, fontSize = 16.sp, modifier = Modifier.weight(1f))
+            Text(if (valor <= 0.001f) "callado" else "${(valor * 100).toInt()} %", color = p.texto2, fontFamily = Sans, fontSize = 13.sp)
+        }
+        if (detalle != null) Text(detalle, color = p.texto2, fontFamily = Sans, fontSize = 13.sp)
+        androidx.compose.material3.Slider(
+            value = valor,
+            onValueChange = alCambiar,
+            colors = androidx.compose.material3.SliderDefaults.colors(thumbColor = Azules.Cianotipo, activeTrackColor = Azules.Cianotipo, inactiveTrackColor = p.linea),
+        )
+    }
 }

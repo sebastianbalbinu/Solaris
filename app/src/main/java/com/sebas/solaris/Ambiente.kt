@@ -55,6 +55,19 @@ object Ambiente {
     /** La app está a la vista. */
     var aLaVista = false
 
+    /** Cuánto suena todo el mar (0 a 1), aparte del volumen del celular: para tenerlo bajito con música. */
+    var volumen by mutableStateOf(1f)
+        private set
+    /** Cuánto suena la lluvia y los truenos, frente al mar (0 a 1). */
+    var nivelLluvia by mutableStateOf(1f)
+        private set
+    var nivelTruenos by mutableStateOf(1f)
+        private set
+
+    fun fijarVolumen(v: Float) { volumen = v; prefs.edit().putFloat("sonido_volumen", v).apply() }
+    fun fijarLluvia(v: Float) { nivelLluvia = v; prefs.edit().putFloat("sonido_lluvia", v).apply() }
+    fun fijarTruenos(v: Float) { nivelTruenos = v; prefs.edit().putFloat("sonido_truenos", v).apply() }
+
     fun fijarActivo(v: Boolean) {
         activo = v
         prefs.edit().putBoolean("sonido_mar", v).apply()
@@ -66,6 +79,9 @@ object Ambiente {
         app = ctx.applicationContext
         prefs = app.getSharedPreferences("solaris_ui", Context.MODE_PRIVATE)
         activo = prefs.getBoolean("sonido_mar", true)
+        volumen = prefs.getFloat("sonido_volumen", 1f)
+        nivelLluvia = prefs.getFloat("sonido_lluvia", 1f)
+        nivelTruenos = prefs.getFloat("sonido_truenos", 1f)
         dir = File(app.filesDir, "sonido/v1").apply { mkdirs() }
         scope.launch {
             withContext(Dispatchers.IO) { bajar() }
@@ -130,7 +146,7 @@ object Ambiente {
         val calma = 1 - suave(2.0, 3.5, h)
         val bravo = (1 - calma - temporal).coerceAtLeast(0.0)
         val m = Clima.mar
-        val lluvia = maxOf(suave(0.2, 3.0, m.lluvia), if (m.rayos) 0.7 else 0.0) * 0.85
+        val lluvia = maxOf(suave(0.2, 3.0, m.lluvia), if (m.rayos) 0.7 else 0.0) * 0.85 * nivelLluvia
         return mapOf(
             "mar_calma" to calma.toFloat(),
             "mar_bravo" to bravo.toFloat(),
@@ -161,7 +177,8 @@ object Ambiente {
                 val a = actual[n] ?: 0f
                 val b = a + ((metas[n] ?: 0f) - a) * (1 - exp(-dt / 14f))
                 actual[n] = b
-                val v = (b * general).coerceIn(0f, 1f)
+                // la barra de volumen se siente al momento; con curva, para que lo bajito sea fino
+                val v = (b * general * volumen * volumen).coerceIn(0f, 1f)
                 j.volume = v
                 if (v > 0.002f && !j.isPlaying) j.play()
                 if (v <= 0.002f && j.isPlaying) j.pause()
@@ -178,7 +195,8 @@ object Ambiente {
             mp.setAudioAttributes(android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA)
                 .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MOVIE).build())
             mp.setDataSource(f.path)
-            val v = (if (lejano) 0.55f else 0.95f) * general.coerceAtLeast(0.3f)
+            val v = (if (lejano) 0.55f else 0.95f) * general.coerceAtLeast(0.3f) * volumen * volumen * nivelTruenos
+            if (v < 0.003f) { mp.release(); return }
             mp.setVolume(v, v)
             mp.setOnCompletionListener { it.release() }
             mp.setOnErrorListener { p, _, _ -> p.release(); true }
