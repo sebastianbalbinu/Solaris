@@ -1,0 +1,55 @@
+name: Muestras de sonido
+on:
+  push:
+    branches: [muestras-sonido]
+permissions:
+  contents: write
+jobs:
+  muestras:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bajar y preparar
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+          mkdir -p crudo muestras
+          # id | nombre de la muestra | segundo de inicio
+          cat > lista.txt <<'L'
+          371169|mar_1_velero_atlantico|5
+          435668|mar_2_proa_pacifico|0
+          166753|mar_3_litera_cruzando_atlantico|20
+          138014|bravo_1_ferry_tormenta|30
+          841657|bravo_2_diez_beaufort|20
+          544119|bravo_3_tormenta_atlantico|10
+          326443|lluvia_1_suave_sobre_el_agua|10
+          248281|lluvia_2_sobre_un_lago|10
+          330408|lluvia_3_tormenta_con_lluvia_y_olas|10
+          367222|trueno_1_rodando_lejos|0
+          446753|trueno_2_rayo_cercano|0
+          L
+          while IFS='|' read -r id nombre ini; do
+            id=$(echo $id | tr -d ' ')
+            [ -z "$id" ] && continue
+            url=$(curl -sL -A "Mozilla/5.0" "https://freesound.org/s/$id/" | grep -oE "https://cdn\.freesound\.org/previews/[0-9]+/${id}_[0-9]+-hq\.mp3" | head -1)
+            if [ -z "$url" ]; then
+              url=$(curl -sL -A "Mozilla/5.0" "https://freesound.org/s/$id/" | grep -oE "https://cdn\.freesound\.org/previews/[0-9]+/${id}_[0-9]+-lq\.mp3" | head -1 | sed 's/-lq/-hq/')
+            fi
+            echo "$id -> $url"
+            [ -z "$url" ] && continue
+            curl -sL -A "Mozilla/5.0" -o crudo/$id.mp3 "$url" || continue
+            ffmpeg -loglevel error -y -ss $ini -t 45 -i crudo/$id.mp3 \
+              -af "loudnorm=I=-20:TP=-2:LRA=11,afade=t=in:d=2,afade=t=out:st=42:d=3" \
+              -c:a aac -b:a 160k muestras/$nombre.m4a || true
+          done < lista.txt
+          # una mezcla de ejemplo: noche en el Drake con mar bravo, lluvia y truenos lejanos
+          if [ -f crudo/138014.mp3 ] && [ -f crudo/326443.mp3 ] && [ -f crudo/367222.mp3 ]; then
+            ffmpeg -loglevel error -y -ss 30 -t 60 -i crudo/138014.mp3 -ss 10 -t 60 -i crudo/326443.mp3 -t 60 -i crudo/367222.mp3 \
+              -filter_complex "[0]volume=1.0[a];[1]volume=0.55[b];[2]adelay=18000|18000,volume=0.8[c];[a][b][c]amix=inputs=3:normalize=0,loudnorm=I=-20:TP=-2,afade=t=in:d=3,afade=t=out:st=56:d=4" \
+              -c:a aac -b:a 160k muestras/mezcla_noche_drake_tormenta.m4a || true
+          fi
+          ls -la muestras
+          cd muestras && zip -q ../muestras.zip *.m4a && cd ..
+          gh release view muestras-sonido >/dev/null 2>&1 || gh release create muestras-sonido --title "Muestras de sonido" --notes "Muestras para elegir el sonido del mar" --prerelease
+          gh release upload muestras-sonido muestras.zip --clobber
