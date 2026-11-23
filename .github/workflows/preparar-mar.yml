@@ -1,0 +1,66 @@
+name: Preparar sonido y noche
+on:
+  push:
+    branches: [preparar-mar]
+    paths: ['.github/workflows/preparar-mar.yml', 'herramientas/sonido.py', 'herramientas/noche.sh']
+permissions:
+  contents: write
+jobs:
+  sonido:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bucles y truenos
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+          pip install -q numpy
+          mkdir -p crudo sonido
+          for u in 371169_2774517 544119_11519060 841657_2550221 330408_2713464 367222_1790434 446753_1790434; do
+            id=${u%%_*}; curl -sL -A "Mozilla/5.0" -o crudo/$id.mp3 "https://cdn.freesound.org/previews/${id:0:3}/${u}-hq.mp3"
+          done
+          ls -la crudo
+          python3 herramientas/sonido.py crudo
+          ls -la sonido
+          gh release view sonido-v1 >/dev/null 2>&1 || gh release create sonido-v1 --title "Sonido del mar v1" --notes "Grabaciones de Freesound: borralbi (CC0), bruno.auzet (CC0), George_Papargyris (CC BY 4.0), jrosin (CC BY 4.0), BlueDelta (CC0)." --prerelease
+          gh release upload sonido-v1 sonido/* --clobber
+  noche:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        parte: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Videos de noche con más tonos
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+          bash herramientas/noche.sh ${{ matrix.parte }} 8
+  indice:
+    needs: noche
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Índice con los de noche nuevos
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download mar-v3 -p indice.json -O indice.json --clobber
+          gh release view mar-v3 --json assets -q '.assets[]|"\(.name) \(.size)"' > activos.txt
+          python3 - <<'PY'
+          import json
+          d = json.load(open("indice.json"))
+          tam = dict(l.split() for l in open("activos.txt"))
+          diez = {}
+          for v in list(d["estados"].values()) + list(d["transiciones"].values()):
+              n = v.replace(".mp4", ".d10.mp4")
+              if "noche" in v and n in tam:
+                  diez[v] = n
+                  d["bytes"][n] = int(tam[n])
+          d["diez"] = diez
+          json.dump(d, open("indice.json", "w"))
+          print(len(diez), "videos de noche en 10 bits")
+          PY
+          gh release upload mar-v3 indice.json --clobber
