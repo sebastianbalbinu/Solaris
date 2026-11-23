@@ -111,7 +111,7 @@ fun Ajustes() {
                     Column(Modifier.weight(1f)) {
                         Text("El sonido del mar", color = p.texto, fontFamily = Sans, fontSize = 16.sp)
                         Text(
-                            if (com.sebas.solaris.Ambiente.listo) "Olas, viento, lluvia y truenos según el Drake de ahora" else "Bajando el sonido del mar (unos 8 MB)…",
+                            if (com.sebas.solaris.Ambiente.listo) "Olas, viento, lluvia y truenos según el Drake de ahora" else "Bajando el sonido del mar (unos 6 MB)…",
                             color = p.texto2, fontFamily = Sans, fontSize = 13.sp,
                         )
                     }

@@ -77,7 +77,7 @@ object Ambiente {
 
     private fun archivo(nombre: String): File? = File(dir, "$nombre.ogg").takeIf { it.exists() && it.length() > 0 }
 
-    /** Baja lo que falte (unos 8 MB en total, una sola vez). */
+    /** Baja lo que falte (unos 6 MB en total, una sola vez). */
     private suspend fun bajar() {
         val faltan = (CAPAS + GOLPES).filter { archivo(it) == null }
         if (faltan.isEmpty()) return
