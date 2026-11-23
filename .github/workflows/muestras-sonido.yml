@@ -39,13 +39,13 @@ jobs:
             echo "$id -> $url"
             [ -z "$url" ] && continue
             curl -sL -A "Mozilla/5.0" -o crudo/$id.mp3 "$url" || continue
-            ffmpeg -loglevel error -y -ss $ini -t 45 -i crudo/$id.mp3 \
+            ffmpeg -nostdin -loglevel error -y -ss $ini -t 45 -i crudo/$id.mp3 \
               -af "loudnorm=I=-20:TP=-2:LRA=11,afade=t=in:d=2,afade=t=out:st=42:d=3" \
               -c:a aac -b:a 160k muestras/$nombre.m4a || true
           done < lista.txt
           # una mezcla de ejemplo: noche en el Drake con mar bravo, lluvia y truenos lejanos
           if [ -f crudo/138014.mp3 ] && [ -f crudo/326443.mp3 ] && [ -f crudo/367222.mp3 ]; then
-            ffmpeg -loglevel error -y -ss 30 -t 60 -i crudo/138014.mp3 -ss 10 -t 60 -i crudo/326443.mp3 -t 60 -i crudo/367222.mp3 \
+            ffmpeg -nostdin -loglevel error -y -ss 30 -t 60 -i crudo/138014.mp3 -ss 10 -t 60 -i crudo/326443.mp3 -t 60 -i crudo/367222.mp3 \
               -filter_complex "[0]volume=1.0[a];[1]volume=0.55[b];[2]adelay=18000|18000,volume=0.8[c];[a][b][c]amix=inputs=3:normalize=0,loudnorm=I=-20:TP=-2,afade=t=in:d=3,afade=t=out:st=56:d=4" \
               -c:a aac -b:a 160k muestras/mezcla_noche_drake_tormenta.m4a || true
           fi
