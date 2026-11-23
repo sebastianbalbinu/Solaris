@@ -132,7 +132,7 @@ fun Orilla() {
         )
         Box(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                .graphicsLayer { alpha = (0.35f + 0.65f * niebla()) * retirada }.nieblaDeBorde(arriba = false, denso = true)
+                .graphicsLayer { alpha = niebla() * retirada }.nieblaDeBorde(arriba = false, denso = true)
                 .navigationBarsPadding().height(170.dp)
         )
 
