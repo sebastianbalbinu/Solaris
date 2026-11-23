@@ -27,6 +27,7 @@ jobs:
           gh release view sonido-v1 >/dev/null 2>&1 || gh release create sonido-v1 --title "Sonido del mar v1" --notes "Grabaciones de Freesound: borralbi (CC0), bruno.auzet (CC0), George_Papargyris (CC BY 4.0), jrosin (CC BY 4.0), BlueDelta (CC0)." --prerelease
           gh release upload sonido-v1 sonido/* --clobber
   noche:
+    if: false
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -40,8 +41,8 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
           bash herramientas/noche.sh ${{ matrix.parte }} 4
   indice:
-    if: false
     needs: noche
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
