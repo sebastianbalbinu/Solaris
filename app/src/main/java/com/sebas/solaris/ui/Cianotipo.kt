@@ -321,6 +321,11 @@ fun MarCianotipo(modifier: Modifier, vivo: Boolean = true) {
     // si todavía se ve un mar de día y allá ya es de noche (mientras el mar llega), se oscurece
     val noche = if (!Clima.mar.esDia && !Corriente.visible.startsWith("noche") && !Corriente.visible.startsWith("crep")) 0.4f else 0f
 
+    val fuerzaGrano = when {
+        Corriente.visible.startsWith("noche") -> 0f
+        Corriente.visible.startsWith("crep") -> 0.3f
+        else -> 0.55f
+    }
     Box(modifier) {
         // el cuadro quieto, con el mismo acercamiento que tendrá el video (así no salta al empezar)
         val acerca = if (Balanceo.quieta) 1f else Balanceo.ZOOM
@@ -337,7 +342,8 @@ fun MarCianotipo(modifier: Modifier, vivo: Boolean = true) {
         Canvas(Modifier.fillMaxSize()) {
             if (noche > 0f) drawRect(Color.Black.copy(alpha = noche))
             translate(-granoDesfase.x, -granoDesfase.y) {
-                drawRect(grano, topLeft = Offset.Zero, size = Size(size.width + 256f, size.height + 256f))
+                // el grano de película: fino de día, apenas al atardecer y nada de noche (de noche parecía ruido de sensor)
+                if (fuerzaGrano > 0f) drawRect(grano, topLeft = Offset.Zero, size = Size(size.width + 256f, size.height + 256f), alpha = fuerzaGrano)
             }
             drawRect(
                 Brush.radialGradient(

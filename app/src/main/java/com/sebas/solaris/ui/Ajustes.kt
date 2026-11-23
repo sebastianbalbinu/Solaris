@@ -107,6 +107,20 @@ fun Ajustes() {
                 if (aviso != null) Parrafo(aviso ?: "", Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
             }
             Grupo("Tacto y sonido") {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("El sonido del mar", color = p.texto, fontFamily = Sans, fontSize = 16.sp)
+                        Text(
+                            if (com.sebas.solaris.Ambiente.listo) "Olas, viento, lluvia y truenos según el Drake de ahora" else "Bajando el sonido del mar (unos 8 MB)…",
+                            color = p.texto2, fontFamily = Sans, fontSize = 13.sp,
+                        )
+                    }
+                    Switch(
+                        checked = com.sebas.solaris.Ambiente.activo,
+                        onCheckedChange = { com.sebas.solaris.Ambiente.fijarActivo(it); Sonidos.tic() },
+                        colors = SwitchDefaults.colors(checkedTrackColor = Azules.Cianotipo, checkedThumbColor = Color.White),
+                    )
+                }
                 var sonido by remember { mutableStateOf(Sonidos.conSonido) }
                 var vibra by remember { mutableStateOf(Sonidos.conVibracion) }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -163,6 +177,13 @@ fun Ajustes() {
                         "Las voces y los rumores se quedan en este celular; a la nube suben su nombre y, en las voces, su transcripción. " +
                         "Para transcribir, el audio viaja una vez (reducido a 16 kHz) a Whisper por medio de tu Supabase, y no se guarda allá. " +
                         "El océano lee el mar real del Paso de Drake cada hora en Open-Meteo.",
+                    Modifier.padding(16.dp),
+                )
+            }
+            Grupo("El sonido del mar") {
+                Parrafo(
+                    "Grabaciones reales de Freesound: el Atlántico desde un velero (borralbi, CC0), tormenta en Ouessant (bruno.auzet, CC0), " +
+                        "viento de fuerza 10 en Tinos (George_Papargyris, CC BY 4.0), tormenta con lluvia (jrosin, CC BY 4.0) y truenos (BlueDelta, CC0).",
                     Modifier.padding(16.dp),
                 )
             }

@@ -178,6 +178,9 @@ private fun Superficie(modifier: Modifier) {
                         color = Azules.Bruma,
                     )
                 }
+                // solo el mar: todo se va y queda el agua
+                Redondo(fondo = Azules.Noche, vidrio = true, alTocar = { Nav.soloMar = true }) { IconoOla(Azules.Crema) }
+                Spacer(Modifier.width(10.dp))
                 Redondo(fondo = Azules.Noche, vidrio = true, alTocar = { Nav.ajustes = true }) { IconoPuntos(Azules.Crema) }
             }
             Spacer(Modifier.height(44.dp))
@@ -389,4 +392,21 @@ fun hace(t: Long): String {
 private fun frase(e: Item): String {
     val t = if (e.esCinta) e.title + (if (e.text.isNotBlank()) ": " + e.text else "") else e.title.ifBlank { e.text }
     return sinMarcas(com.sebas.solaris.Marcas.limpio(t).replace('\n', ' ')).take(110).trim()
+}
+
+/** Tres olas finas: el botón de solo el mar. */
+@Composable
+fun IconoOla(color: Color, tam: androidx.compose.ui.unit.Dp = 20.dp) {
+    Canvas(Modifier.size(tam)) {
+        val w = size.width; val g = w * 0.075f
+        for (k in 0..2) {
+            val y = size.height * (0.3f + k * 0.2f)
+            val camino = androidx.compose.ui.graphics.Path().apply {
+                moveTo(w * 0.08f, y)
+                cubicTo(w * 0.25f, y - w * 0.12f, w * 0.38f, y + w * 0.12f, w * 0.5f, y)
+                cubicTo(w * 0.62f, y - w * 0.12f, w * 0.75f, y + w * 0.12f, w * 0.92f, y)
+            }
+            drawPath(camino, color.copy(alpha = 1f - k * 0.25f), style = androidx.compose.ui.graphics.drawscope.Stroke(g, cap = androidx.compose.ui.graphics.StrokeCap.Round))
+        }
+    }
 }

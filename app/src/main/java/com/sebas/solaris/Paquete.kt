@@ -71,15 +71,25 @@ object Paquete {
         // los mares de antes (v1 realista viejo, v2 liminal) se borran: no se usan más
         listOf("mar/v1", "mar/v2").forEach { File(ctx.filesDir, it).takeIf { f -> f.exists() }?.deleteRecursively() }
         dir = File(ctx.filesDir, "mar/v3").apply { mkdirs() }
-        File(dir, "indice.json").takeIf { it.exists() }?.let { try { leerIndice(JSONObject(it.readText())) } catch (e: Exception) {} }
+        File(dir, "indice.json").takeIf { it.exists() }?.let { f ->
+            try {
+                val o = JSONObject(f.readText())
+                leerIndice(o)
+                // la edad del índice es la del archivo; uno sin la noche en 10 bits se renueva ya
+                indiceLeido = if (o.has("diez")) f.lastModified() else 0L
+            } catch (e: Exception) {}
+        }
         medir()
     }
 
     private fun leerIndice(o: JSONObject) {
+        // los videos de noche tienen una versión con más tonos de oscuro (10 bits): se usa si el celular la sabe mostrar
+        val d = if (diezBits) o.optJSONObject("diez") else null
+        fun nombre(v: String) = d?.optString(v)?.takeIf { it.isNotBlank() } ?: v
         val e = o.getJSONObject("estados")
-        estados = e.keys().asSequence().associateWith { e.getString(it) }
+        estados = e.keys().asSequence().associateWith { nombre(e.getString(it)) }
         val t = o.getJSONObject("transiciones")
-        transiciones = t.keys().asSequence().associateWith { t.getString(it) }
+        transiciones = t.keys().asSequence().associateWith { nombre(t.getString(it)) }
         val m = o.optJSONObject("movimiento")
         movimientos = m?.keys()?.asSequence()?.associateWith { m.getString(it) } ?: emptyMap()
         val b = o.optJSONObject("bytes")
@@ -88,6 +98,17 @@ object Paquete {
         horizonte = o.optDouble("horizonte", 0.402).toFloat()
         entradaMs = o.optLong("entrada_ms", 0L)
         indiceLeido = System.currentTimeMillis()
+    }
+
+    /** Si el celular decodifica HEVC de 10 bits con su chip de video (casi todos desde 2017). */
+    private val diezBits: Boolean by lazy {
+        try {
+            android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS).codecInfos.any { c ->
+                !c.isEncoder && c.supportedTypes.any { it.equals("video/hevc", true) } &&
+                    (android.os.Build.VERSION.SDK_INT < 29 || c.isHardwareAccelerated) &&
+                    c.getCapabilitiesForType("video/hevc").profileLevels.any { it.profile == android.media.MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10 }
+            }
+        } catch (e: Exception) { false }
     }
 
     private fun archivo(nombre: String?): File? = nombre?.let { File(dir, it) }?.takeIf { it.exists() && it.length() > 0 }

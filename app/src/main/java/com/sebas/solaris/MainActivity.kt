@@ -32,6 +32,9 @@ class MainActivity : FragmentActivity() {
         Paquete.descargar()
         Marea.iniciar(this)
         com.sebas.solaris.ui.Respiraciones.iniciar(this)
+        Ambiente.iniciar(this)
+        // la estación se cierra cuando se apaga la pantalla (no cada vez que se cambia de app)
+        registerReceiver(alApagar, android.content.IntentFilter(Intent.ACTION_SCREEN_OFF))
         recibir(intent)
         setContent { Solaris(this) }
     }
@@ -39,6 +42,19 @@ class MainActivity : FragmentActivity() {
     override fun onStart() {
         super.onStart()
         Sonidos.aLaVista = true
+        Ambiente.aLaVista = true
+    }
+
+    private val alApagar = object : android.content.BroadcastReceiver() {
+        override fun onReceive(c: android.content.Context?, i: Intent?) {
+            if (!Casa.pausarCandado) Casa.cerrar()
+            com.sebas.solaris.ui.Nav.soloMar = false
+        }
+    }
+
+    override fun onDestroy() {
+        try { unregisterReceiver(alApagar) } catch (e: Exception) {}
+        super.onDestroy()
     }
 
     override fun onResume() {
@@ -64,11 +80,10 @@ class MainActivity : FragmentActivity() {
         super.onStop()
         if (isChangingConfigurations) return
         Sonidos.aLaVista = false
+        Ambiente.aLaVista = false
         // La grabación sigue sola (con su notificación); la reproducción se detiene.
         Grabadora.detenerReproduccion()
         com.sebas.solaris.ui.Oleaje.respirando = false
-        // Apenas sales de la app, la estación se cierra.
-        if (!Casa.pausarCandado) Casa.cerrar()
     }
 }
 

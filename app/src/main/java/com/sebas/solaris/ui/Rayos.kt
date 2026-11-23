@@ -175,7 +175,7 @@ fun Tormenta(vivo: Boolean) {
                 r.nacio = System.nanoTime()
                 rayos += r
                 com.sebas.solaris.Sonidos.rayo(lejano)
-                scope.launch { delay((if (lejano) 2200L else 900L) + Random.nextLong(1600)); com.sebas.solaris.Sonidos.trueno(lejano) }
+                scope.launch { delay((if (lejano) 2200L else 900L) + Random.nextLong(1600)); com.sebas.solaris.Sonidos.trueno(lejano); com.sebas.solaris.Ambiente.trueno(lejano) }
             }
             delay(1000)
         }

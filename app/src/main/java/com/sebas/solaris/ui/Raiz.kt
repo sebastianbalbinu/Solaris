@@ -1,5 +1,7 @@
 package com.sebas.solaris.ui
 
+import androidx.activity.compose.BackHandler
+
 import android.graphics.Bitmap
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedContent
@@ -61,6 +63,8 @@ object Nav {
     var cambiarPin by mutableStateOf(false)
     /** Grabando sobre el mar. */
     var grabando by mutableStateOf(false)
+    /** Solo el mar: nada encima, ni siquiera la hora. */
+    var soloMar by mutableStateOf(false)
     /** La cinta abierta para escuchar. */
     var escuchando by mutableStateOf<String?>(null)
     /** Lo que pidió el widget ("escribir" o "grabar"). */
@@ -91,6 +95,19 @@ fun Solaris(act: MainActivity) {
         c.isAppearanceLightStatusBars = !pantallaOscura
         c.isAppearanceLightNavigationBars = !pantallaOscura
     }
+    // solo el mar: las barras del sistema se esconden y la pantalla no se apaga mientras se mira
+    DisposableEffect(Nav.soloMar) {
+        val c = WindowCompat.getInsetsController(act.window, vista)
+        if (Nav.soloMar) {
+            c.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            c.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            act.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            c.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            act.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
     LaunchedEffect(Unit) {
         while (isActive) { delay(60_000); Tema.tic() }
     }
@@ -102,7 +119,8 @@ fun Solaris(act: MainActivity) {
         // un solo mar, debajo de todo: la entrada y la orilla son el mismo; sigue vivo mientras uno escribe (escribir lo mueve)
         if (enCasa) {
             val enSuperficie = Nav.listaOrilla.firstVisibleItemIndex == 0
-            val marVivo = !Casa.abierta || Nav.borrador != null || (!encima && enSuperficie)
+            // el mar no se detiene nunca mientras se ve: ni al escribir, ni en solo el mar
+            val marVivo = !Casa.abierta || Nav.borrador != null || Nav.soloMar || (!encima && enSuperficie)
             DisposableEffect(Unit) { Vidrio.activo = true; onDispose { Vidrio.activo = false } }
             // El vidrio no mira el video en vivo (eso costaba un desenfoque por cuadro): mira una foto chiquita
             // del mar que se renueva cada segundo y medio. Va detrás del mar, así que no se ve sola.
@@ -138,10 +156,11 @@ fun Solaris(act: MainActivity) {
             !Casa.lista -> Bienvenida(act)
             else -> AnimatedContent(
                 targetState = Casa.abierta,
-                transitionSpec = { fadeIn(tween(1100, delayMillis = 150)) togetherWith fadeOut(tween(900)) },
+                transitionSpec = { fadeIn(tween(700)) togetherWith fadeOut(tween(450)) },
                 label = "llegada",
             ) { abierta ->
-                Box(Modifier.fillMaxSize().enfoqueAlEntrar(transition, 24.dp)) { if (abierta) Interior() else Entrada(act) }
+                // sin desenfoque de pantalla completa (trababa la entrada): un fundido limpio
+                Box(Modifier.fillMaxSize()) { if (abierta) Interior() else Entrada(act) }
             }
         }
         // escribiendo, el papel tapa el cielo, pero la luz de los relámpagos pasa a través de él
@@ -175,14 +194,15 @@ fun Entrada(act: MainActivity) {
         val inicio = System.currentTimeMillis()
         var acoplado = false
         while (isActive) {
-            llegada = ((System.currentTimeMillis() - inicio) / 3500.0).coerceIn(0.0, 1.0)
+            llegada = ((System.currentTimeMillis() - inicio) / 1400.0).coerceIn(0.0, 1.0)
             if (!acoplado && llegada >= 1.0) { acoplado = true; Sonidos.acople() }
             if (acoplado) break
             delay(50)
         }
     }
     LaunchedEffect(Unit) {
-        listOf(700L, 800L, 800L, 800L, 900L).forEach { delay(it); paso++ }
+        // la estación arranca rápido: las señales aparecen en poco más de un segundo
+        listOf(250L, 220L, 220L, 220L, 300L).forEach { delay(it); paso++ }
         if (conHuella && !pinVisible) Huella.pedir(act) { Casa.abrirAlFondo() }
     }
     val e = (1 - Math.pow(1 - llegada, 3.0)).toFloat()
@@ -336,7 +356,11 @@ fun Interior() {
 
     // mientras algo está encima (escribir, ajustes), la orilla se retira: solo queda el mar
     val encima = Nav.borrador != null || Nav.ajustes || Nav.cambiarPin
-    val orilla by animateFloatAsState(if (encima) 0f else 1f, tween(if (encima) 220 else 500), label = "orilla")
+    // en solo el mar todo se retira despacio, como si se apagaran las luces del puente
+    val orilla by animateFloatAsState(
+        if (encima || Nav.soloMar) 0f else 1f,
+        tween(if (Nav.soloMar) 1600 else if (encima) 220 else 700), label = "orilla",
+    )
     LaunchedEffect(Unit) { snapshotFlow { orilla }.collect { Vidrio.presencia = it } }
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = orilla }) { if (orilla > 0.01f) Orilla() }
@@ -345,6 +369,15 @@ fun Interior() {
         Encima(Nav.cambiarPin) { Box(Modifier.fillMaxSize().background(Tema.p.fondo).systemBarsPadding()) { PinNuevo { Nav.cambiarPin = false } } }
         Grabacion()
         Escuchar()
+        // solo el mar: tocar en cualquier parte vuelve
+        if (Nav.soloMar) {
+            BackHandler { Nav.soloMar = false }
+            Box(
+                Modifier.fillMaxSize().clickable(
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null,
+                ) { Nav.soloMar = false }
+            )
+        }
     }
 }
 
@@ -356,5 +389,5 @@ private fun Encima(visible: Boolean, contenido: @Composable () -> Unit) {
         enter = slideInVertically(spring(dampingRatio = 0.86f, stiffness = 300f)) { it / 5 } + fadeIn(tween(320)) +
             scaleIn(spring(dampingRatio = 0.9f, stiffness = 300f), initialScale = 0.97f),
         exit = slideOutVertically(spring(dampingRatio = 1f, stiffness = 420f)) { it / 5 } + fadeOut(tween(240)),
-    ) { Box(Modifier.fillMaxSize().enfoqueAlEntrar(transition)) { contenido() } }
+    ) { Box(Modifier.fillMaxSize()) { contenido() } }
 }
