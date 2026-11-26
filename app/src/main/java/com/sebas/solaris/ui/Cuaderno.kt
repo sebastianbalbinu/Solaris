@@ -1,4 +1,8 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package com.sebas.solaris.ui
+
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 
 import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
@@ -411,6 +415,22 @@ fun Editor(b: Borrador) {
                                         FormatoSencillo(p.texto2.copy(alpha = 0.45f), p.acento, p.texto2, tam, forma.capitular && bl === primerTexto)
                                     }
                                     val ultimo = bl === ultimoTexto
+                                    // la hoja sigue al cursor: al escribir (o al abrirse el teclado) baja sola hasta donde va la letra
+                                    val seguir = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+                                    var capa by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
+                                    var conFoco by remember { mutableStateOf(false) }
+                                    val densidad = androidx.compose.ui.platform.LocalDensity.current
+                                    val teclado = WindowInsets.ime.getBottom(densidad)
+                                    LaunchedEffect(conFoco, bl.valor.selection, bl.valor.text.length, teclado) {
+                                        if (!conFoco) return@LaunchedEffect
+                                        delay(30) // que el texto nuevo ya esté acomodado
+                                        val r = capa ?: return@LaunchedEffect
+                                        val c = r.getCursorRect(bl.valor.selection.end.coerceIn(0, r.layoutInput.text.length))
+                                        // un poco de aire arriba y, abajo, más allá de la niebla del borde
+                                        val aire = with(densidad) { 24.dp.toPx() }
+                                        val bajo = with(densidad) { 120.dp.toPx() }
+                                        seguir.bringIntoView(androidx.compose.ui.geometry.Rect(c.left, c.top - aire, c.right + 1f, c.bottom + bajo))
+                                    }
                                     BasicTextField(
                                         value = bl.valor,
                                         onValueChange = { nuevo ->
@@ -421,8 +441,10 @@ fun Editor(b: Borrador) {
                                         cursorBrush = SolidColor(p.acento),
                                         visualTransformation = formatoTexto,
                                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                                        onTextLayout = { capa = it },
                                         modifier = Modifier.fillMaxWidth()
-                                            .onFocusChanged { if (it.isFocused) activo = bl }
+                                            .bringIntoViewRequester(seguir)
+                                            .onFocusChanged { conFoco = it.isFocused; if (it.isFocused) activo = bl }
                                             .defaultMinSize(minHeight = if (ultimo) 300.dp else 30.dp)
                                             .padding(vertical = 4.dp),
                                         decorationBox = { campo ->

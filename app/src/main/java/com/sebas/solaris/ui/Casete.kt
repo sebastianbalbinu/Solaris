@@ -1,5 +1,11 @@
 package com.sebas.solaris.ui
 
+import androidx.compose.animation.core.animateFloatAsState
+
+import androidx.compose.ui.graphics.drawscope.rotate
+
+import androidx.compose.ui.draw.drawWithContent
+
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
@@ -222,9 +228,29 @@ fun CasetePegado(c: Item, tam: String, alOpciones: (() -> Unit)?, modifier: Modi
             }
             return@Column
         }
+        // un casete de verdad pegado sobre la hoja: un poco torcido, con su sombra en el papel y dos tiras de cinta
+        val giroPegado = remember(c.id) { ((c.id.hashCode() and 0x7fffffff) % 7 - 3) * 0.9f }
+        val presion by animateFloatAsState(if (suena) 1.015f else 1f, spring(dampingRatio = 0.7f, stiffness = 300f), label = "casete")
         Box(
             Modifier.fillMaxWidth(ancho)
-                .graphicsLayer { rotationZ = (c.id.hashCode() % 5) * 0.35f }
+                .padding(vertical = 6.dp)
+                .graphicsLayer { rotationZ = giroPegado; scaleX = presion; scaleY = presion }
+                .drawWithContent {
+                    // la sombra que deja sobre el papel (suave, hacia abajo a la derecha)
+                    val r = CornerRadius(size.width * 0.05f)
+                    for (k in 1..4) drawRoundRect(
+                        Color.Black.copy(alpha = 0.045f), Offset(k * 1.6f, k * 2.6f), size, r,
+                    )
+                    drawContent()
+                    // las tiras de cinta de papel en las esquinas de arriba
+                    val tw = size.width * 0.2f; val th = size.width * 0.06f
+                    fun tira(cx: Float, angulo: Float) = rotate(angulo, Offset(cx, 0f)) {
+                        drawRect(CintaPapel, Offset(cx - tw / 2, -th / 2), Size(tw, th))
+                        drawRect(Color.White.copy(alpha = 0.18f), Offset(cx - tw / 2, -th / 2), Size(tw, th * 0.35f))
+                    }
+                    if (tam != TamCasete.MINI) { tira(size.width * 0.08f, -32f); tira(size.width * 0.92f, 30f) }
+                    else tira(size.width * 0.5f, -4f)
+                }
                 .clickable(remember { MutableInteractionSource() }, null) { tocar() },
         ) {
             CaseteDibujo(
@@ -235,16 +261,14 @@ fun CasetePegado(c: Item, tam: String, alOpciones: (() -> Unit)?, modifier: Modi
         if (tam != TamCasete.MINI) {
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth(ancho), verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(34.dp).clip(CircleShape).background(p.boton).clickable { tocar() },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (suena) Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                        repeat(2) { Box(Modifier.size(3.dp, 12.dp).background(p.botonTexto)) }
-                    } else Text("▶", color = p.botonTexto, fontSize = 13.sp)
-                }
-                Spacer(Modifier.width(10.dp))
-                Senal(duracion(if (propia) Grabadora.posicion else 0L) + " / " + duracion(c.dur), color = p.texto2, modifier = Modifier.weight(1f))
+                Text(
+                    when {
+                        suena -> "sonando · " + duracion(Grabadora.posicion) + " de " + duracion(c.dur)
+                        propia && Grabadora.pausado -> "en pausa · " + duracion(Grabadora.posicion) + " de " + duracion(c.dur)
+                        else -> "toca el casete para escucharlo · " + duracion(c.dur)
+                    },
+                    color = p.texto2, fontFamily = Mano, fontSize = 18.sp, modifier = Modifier.weight(1f).clickable { tocar() },
+                )
                 if (tam == TamCasete.ESCONDIDO) Enlace("guardar", color = p.texto2) { afuera = false }
                 if (alOpciones != null) Box(Modifier.size(34.dp).clip(CircleShape).clickable { Sonidos.tic(); alOpciones() }, contentAlignment = Alignment.Center) {
                     IconoPuntos(p.texto2)
@@ -255,6 +279,9 @@ fun CasetePegado(c: Item, tam: String, alOpciones: (() -> Unit)?, modifier: Modi
         }
     }
 }
+
+/** La cinta de papel con que se pega el casete (crema translúcida). */
+private val CintaPapel = Color(0xB3EADFC4)
 
 // ---------------- el deck de grabar ----------------
 

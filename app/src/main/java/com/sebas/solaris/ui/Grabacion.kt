@@ -128,7 +128,7 @@ fun Grabacion() {
         }
     }
 
-    Elegir(toma) { toma = null }
+    Elegir(toma, alCerrar = { toma = null }, alRegrabar = { toma = null; Nav.grabando = true })
 
     val msg = aviso
     if (msg != null) {
@@ -142,14 +142,25 @@ fun Grabacion() {
     }
 }
 
-/** Al soltar: ¿qué fue esto? */
+/**
+ * Al terminar de grabar, tú decides: la escuchas, le pones nombre y eliges qué hacer con ella
+ * (guardarla en el mar, pegarla en la nota, escribir sobre ella, grabarla otra vez o borrarla).
+ */
 @Composable
-private fun Elegir(toma: Toma?, alCerrar: () -> Unit) {
+private fun Elegir(toma: Toma?, alCerrar: () -> Unit, alRegrabar: () -> Unit) {
+    val p = Tema.p
     val numero = Casa.cintas().size + 1
     var nombre by remember(toma) { mutableStateOf("") }
     var rumor by remember(toma) { mutableStateOf(false) }
-    fun guardar() {
+    var borrar by remember(toma) { mutableStateOf(false) }
+    val desdeNota = Nav.alGrabar != null
+    val propia = toma != null && Grabadora.idActual == toma.id
+    val suena = propia && Grabadora.reproduciendo
+    LaunchedEffect(suena) { while (isActive && suena) { Grabadora.actualizar(); delay(120) } }
+
+    fun guardar(escribirSobreElla: Boolean = false) {
         val t = toma ?: return
+        Grabadora.detenerReproduccion()
         val n = nombre.trim().ifBlank { (if (rumor) "rumor " else "voz ") + "%03d".format(numero) }
         Casa.nuevaCinta(t.id, n, t.dur, t.inicio, rumor)
         Casa.quitarPendiente(t.id)
@@ -158,16 +169,67 @@ private fun Elegir(toma: Toma?, alCerrar: () -> Unit) {
         if (!rumor) Transcriptor.lanzar(t.id) {}
         Sonidos.acople()
         alCerrar()
+        if (escribirSobreElla) {
+            // una nota nueva con el casete pegado arriba, lista para escribir debajo
+            val nota = com.sebas.solaris.Borrador(null, null)
+            nota.texto = "⟦voz ${t.id}⟧\n"
+            nota.voces = listOf(t.id)
+            Nav.borrador = nota
+        }
     }
+    fun descartar() {
+        val t = toma ?: return
+        Grabadora.detenerReproduccion()
+        Casa.archivoCinta(t.id).delete()
+        Casa.quitarPendiente(t.id)
+    }
+    // cerrar la hoja sin elegir no pierde nada: la grabación se guarda
     Hoja(toma != null, { guardar() }) {
-        Text("¿Qué fue esto?", color = Tema.p.texto, fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 17.sp)
+        val t = toma ?: return@Hoja
+        Text("Tu grabación", color = p.texto, fontFamily = Sans, fontWeight = FontWeight.Medium, fontSize = 17.sp)
+        // escucharla antes de decidir
+        val avance = if (propia && t.dur > 0) (Grabadora.posicion.toFloat() / t.dur).coerceIn(0f, 1f) else 0f
+        CaseteDibujo(
+            Modifier.fillMaxWidth(0.7f).align(Alignment.CenterHorizontally),
+            nombre.ifBlank { if (rumor) "rumor" else "voz" },
+            (if (rumor) "RUMOR · " else "VOZ · ") + duracion(t.dur),
+            giro = carretes(suena), avance = avance, rumor = rumor,
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+            Redondo(tam = 56.dp, fondo = p.boton, alTocar = {
+                Sonidos.tecla()
+                when {
+                    suena -> Grabadora.pausarReproduccion()
+                    propia && Grabadora.pausado -> Grabadora.pausarReproduccion()
+                    else -> Grabadora.reproducir(t.id, Casa.archivoCinta(t.id))
+                }
+            }) {
+                if (suena) Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    repeat(2) { Box(Modifier.size(4.dp, 16.dp).clip(RoundedCornerShape(2.dp)).background(p.botonTexto)) }
+                } else Text("▶", color = p.botonTexto, fontSize = 18.sp)
+            }
+            Spacer(Modifier.width(14.dp))
+            Senal(duracion(if (propia) Grabadora.posicion else 0L) + " / " + duracion(t.dur))
+        }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Opcion("Voz", "ideas, poemas · se transcribe", !rumor, Modifier.weight(1f)) { rumor = false }
             Opcion("Rumor", "el sonido de la vida · solo se guarda", rumor, Modifier.weight(1f)) { rumor = true }
         }
         Campo(nombre, { nombre = it }, if (rumor) "Nombre (lluvia en el techo, la cena del domingo…)" else "Nombre (poema del bus, idea para el corto…)")
-        Pildora("Entregar al mar", Modifier.fillMaxWidth()) { guardar() }
-        toma?.let { Senal(duracion(it.dur) + " · wav 48 khz · se queda en este celular") }
+        if (desdeNota) {
+            Pildora("Pegar en la nota", Modifier.fillMaxWidth()) { guardar() }
+        } else {
+            Pildora("Guardar en el mar", Modifier.fillMaxWidth()) { guardar() }
+            Pildora("Guardar y escribir sobre ella", Modifier.fillMaxWidth(), primaria = false) { guardar(escribirSobreElla = true) }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Pildora("Grabar otra vez", Modifier.weight(1f), primaria = false) { descartar(); alRegrabar() }
+            if (!borrar) Pildora("Borrar", Modifier.weight(1f), primaria = false) { borrar = true }
+            else Pildora("Sí, borrarla", Modifier.weight(1f), primaria = false, tinta = Color(0xFFE0745F)) {
+                descartar(); Nav.alGrabar = null; alCerrar()
+            }
+        }
+        Senal(duracion(t.dur) + " · wav 48 khz · se queda en este celular")
     }
 }
 
